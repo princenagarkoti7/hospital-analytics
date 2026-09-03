@@ -389,7 +389,8 @@ def get_readmission_patient_profile(member_number: str):
                 Normalized_DIAGNOSIS,
                 DIAGNOSIS_TYPE,
                 SHORT_DESCRIPTION,
-                LONG_DESCRIPTION
+                LONG_DESCRIPTION,
+                Year_month
             FROM dbo.Hospital_Readmission
             WHERE Member_Number = ?
             ORDER BY DIAGNOSIS
