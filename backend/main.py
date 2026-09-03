@@ -4,6 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from routes import admission  # admission.py module import kiya
 from routes import readmission  # readmission.py module import kiya
+from routes import Member_ICDcodes  # Member_ICDcodes.py module import kiya
 
 app = FastAPI(title="Hospital Analytics Backend API")
 
@@ -19,6 +20,7 @@ app.add_middleware(
 # Admission module ke routes register karein
 app.include_router(admission.router)
 app.include_router(readmission.router)
+app.include_router(Member_ICDcodes.router)
 
 @app.get("/")
 def root():
