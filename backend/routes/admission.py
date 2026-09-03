@@ -506,7 +506,8 @@ def get_patient_profile(member_number: str):
                 Normalized_DIAGNOSIS,
                 DIAGNOSIS_TYPE,
                 SHORT_DESCRIPTION,
-                LONG_DESCRIPTION
+                LONG_DESCRIPTION,
+				Year_month
             FROM dbo.Hospital_Admission
             WHERE Member_Number = ?
             ORDER BY DIAGNOSIS
