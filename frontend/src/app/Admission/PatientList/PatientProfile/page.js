@@ -547,9 +547,12 @@ function PatientProfileContent() {
                       </p>
                     )}
                     {diagnosis.Year_month && (
-                      <p className="text-xs leading-5 text-slate-600">
-                        {diagnosis.Year_month}
-                      </p>
+                      <div className="text-xs text-slate-500">
+                        Year Month:
+                        <span className="ml-1 font-semibold text-slate-700">
+                          {diagnosis.Year_month}
+                        </span>
+                      </div>
                     )}
                   </div>
                 </div>
