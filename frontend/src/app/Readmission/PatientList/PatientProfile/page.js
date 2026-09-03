@@ -543,6 +543,11 @@ function PatientProfileContent() {
                         {diagnosis.LONG_DESCRIPTION}
                       </p>
                     )}
+                    {diagnosis.Year_month && (
+                      <p className="text-xs leading-5 text-slate-600">
+                        {diagnosis.Year_month}
+                      </p>
+                    )} 
                   </div>
                 </div>
               ))}
