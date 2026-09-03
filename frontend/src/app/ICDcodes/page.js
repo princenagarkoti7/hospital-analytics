@@ -144,7 +144,7 @@ export default function ICDCodesPage() {
               type="text"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Search by Member ID, Patient Name, PCP Name, PCP ID, Claim, HCC Code..."
+              placeholder="Search by Provider ID, PCP Name, Member ID, Patient Name, Claim, HCC Code..."
               className="w-full h-9 pl-9 pr-4 text-xs font-medium border border-slate-200 rounded-xl bg-slate-50 hover:bg-white focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition placeholder:text-slate-400"
             />
             <Search size={14} className="absolute left-3 top-2.5 text-slate-400" />
@@ -166,11 +166,11 @@ export default function ICDCodesPage() {
             <table className="w-full text-left border-collapse table-auto">
               <thead>
                 <tr className="border-b border-slate-100 bg-slate-50/70 text-[11px] font-extrabold uppercase tracking-wider text-slate-500">
+                  <th className="py-3 px-4 min-w-[180px]">Provider Details</th>
                   <th className="py-3 px-4 min-w-[170px]">Member Info</th>
                   <th className="py-3 px-4 min-w-[120px]">Diagnosis</th>
                   <th className="py-3 px-4 min-w-[130px]">HCC V24</th>
                   <th className="py-3 px-4 min-w-[150px]">HCC V28</th>
-                  <th className="py-3 px-4 min-w-[180px]">Provider Details</th>
                   <th className="py-3 px-4 min-w-[140px]">Claim Details</th>
                   <th className="py-3 px-4 min-w-[280px]">Description</th>
                 </tr>
@@ -193,6 +193,16 @@ export default function ICDCodesPage() {
                         key={`${row.CLAIM_NUMBER || row.MEMBER_NUMBER}-${idx}`} 
                         className="hover:bg-slate-50/70 transition-colors group"
                       >
+                        {/* PCP / Provider Info (Pehle Shift Kiya Gaya) */}
+                        <td className="py-3 px-4">
+                          <p className="font-semibold text-slate-800 leading-tight">
+                            {row.PCP_FULL_NAME?.trim() ? row.PCP_FULL_NAME : 'N/A'}
+                          </p>
+                          <p className="text-[11px] font-mono text-slate-500 mt-0.5">
+                            ID: <span className="font-semibold text-slate-700">{row.PCP_NUMBER || 'N/A'}</span>
+                          </p>
+                        </td>
+
                         {/* Member Info: ID & Name grouped cleanly */}
                         <td className="py-3 px-4">
                           <div 
@@ -225,23 +235,13 @@ export default function ICDCodesPage() {
                         <td className="py-3 px-4">
                           {isV28Removed ? (
                             <span className="inline-flex items-center px-2 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200/60 text-[10px] font-semibold">
-                              Removed from V28
+                              Not Risk Adjustable with V28
                             </span>
                           ) : (
                             <span className="inline-flex items-center px-2 py-0.5 rounded bg-blue-50 text-blue-700 text-[11px] font-bold">
                               {row.TARGET_HCC_V28 || 'N/A'}
                             </span>
                           )}
-                        </td>
-
-                        {/* PCP / Provider Info */}
-                        <td className="py-3 px-4">
-                          <p className="font-semibold text-slate-800 leading-tight">
-                            {row.PCP_FULL_NAME?.trim() ? row.PCP_FULL_NAME : 'N/A'}
-                          </p>
-                          <p className="text-[11px] font-mono text-slate-500 mt-0.5">
-                            ID: <span className="font-semibold text-slate-700">{row.PCP_NUMBER || 'N/A'}</span>
-                          </p>
                         </td>
 
                         {/* Claim & Date grouped */}
