@@ -175,7 +175,7 @@ export default function AdmissionPage() {
               🩺 Hospital Admission Analytics & ML Diagnostics
             </h1>
             <p className="text-sm text-slate-500 mt-1">
-              Live processing of Hospital Admission data
+              Live prediction statistics & model evaluation
             </p>
           </div>
           <button

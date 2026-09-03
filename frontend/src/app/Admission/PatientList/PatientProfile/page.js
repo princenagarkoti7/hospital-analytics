@@ -494,73 +494,88 @@ function PatientProfileContent() {
         </div>
       </div>
 
+{/* Diagnoses History Component */}
       <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden">
         <div className="p-4 border-b border-slate-100 bg-slate-50/50 flex items-center gap-2">
           <FileText size={18} className="text-indigo-500" />
           <h3 className="font-bold text-sm text-slate-800">Diagnoses History</h3>
           <span className="ml-auto text-xs font-bold text-slate-500">
-            {diagnoses.length} records
+            {diagnoses.length} conditions
           </span>
         </div>
+        
         <div className="p-4">
           {diagnoses.length > 0 ? (
-            <div className="space-y-3">
+            /* 2-Column Responsive Grid */
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {diagnoses.map((diagnosis, index) => (
                 <div
-                  key={`${diagnosis.DIAGNOSIS || 'diagnosis'}-${index}`}
-                  className="p-4 rounded-xl border border-slate-200 bg-slate-50/50"
+                  key={`${diagnosis.DIAGNOSIS || 'diag'}-${index}`}
+                  className="p-5 rounded-2xl border border-slate-200/90 bg-white hover:border-slate-300 transition-shadow shadow-xs flex flex-col justify-between space-y-3"
                 >
-                  <div className="flex flex-col gap-2">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="text-sm font-bold text-slate-900">
+                  <div className="space-y-2">
+                    {/* Diagnosis Header: Title & Badge */}
+                    <div className="flex items-start justify-between gap-2">
+                      <h4 className="text-sm font-black text-slate-900 leading-snug">
                         {diagnosis.SHORT_DESCRIPTION ||
-                          diagnosis.NORMALIZED_DIAGNOSIS ||
-                          diagnosis.Normalized_DIAGNOSIS ||
+                          diagnosis.LONG_DESCRIPTION ||
                           diagnosis.DIAGNOSIS ||
                           'Diagnosis'}
-                      </span>
+                      </h4>
                       {diagnosis.DIAGNOSIS_TYPE && (
-                        <span className="px-2 py-1 text-[10px] font-bold rounded-md bg-indigo-50 text-indigo-700 border border-indigo-200">
+                        <span className="px-2 py-0.5 text-[10px] font-extrabold rounded-md bg-indigo-50 text-indigo-700 border border-indigo-200 uppercase tracking-wider shrink-0">
                           {diagnosis.DIAGNOSIS_TYPE}
                         </span>
                       )}
                     </div>
-                    {diagnosis.DIAGNOSIS && (
-                      <div className="text-xs text-slate-500">
-                        Diagnosis:
-                        <span className="ml-1 font-semibold text-slate-700">
-                          {diagnosis.DIAGNOSIS}
-                        </span>
+
+                    {/* Codes */}
+                    <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500">
+                      <div>
+                        Diagnosis: <span className="font-bold text-slate-800">{diagnosis.DIAGNOSIS || 'N/A'}</span>
                       </div>
-                    )}
-                    {diagnosis.Normalized_DIAGNOSIS && (
-                      <div className="text-xs text-slate-500">
-                        Normalized:
-                        <span className="ml-1 font-semibold text-slate-700">
-                          {diagnosis.Normalized_DIAGNOSIS}
-                        </span>
+                      <div>
+                        Normalized: <span className="font-bold text-slate-800">{diagnosis.Normalized_DIAGNOSIS || 'N/A'}</span>
                       </div>
-                    )}
+                    </div>
+
+                    {/* Description */}
                     {diagnosis.LONG_DESCRIPTION && (
-                      <p className="text-xs leading-5 text-slate-600">
+                      <p className="text-xs text-slate-600 leading-relaxed font-medium line-clamp-2">
                         {diagnosis.LONG_DESCRIPTION}
                       </p>
                     )}
-                    {diagnosis.Year_month && (
-                      <div className="text-xs text-slate-500">
-                        Year Month:
-                        <span className="ml-1 font-semibold text-slate-700">
-                          {diagnosis.Year_month}
-                        </span>
-                      </div>
-                    )}
+                  </div>
+
+                  {/* Visit Stats Footer */}
+                  <div className="pt-3 border-t border-slate-100/80 space-y-1.5 text-xs">
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-500 font-medium">Total Visits:</span>
+                      <span className="font-bold px-2 py-0.5 bg-slate-100 text-slate-800 rounded-md text-[11px]">
+                        {diagnosis.Total_Visits ?? 1}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-500 font-medium">Last Visit:</span>
+                      <span className="font-bold text-slate-800">
+                        {diagnosis.Last_Visit || diagnosis.Year_month || 'N/A'}
+                      </span>
+                    </div>
+
+                    <div className="pt-1 text-[11px] text-slate-500">
+                      <span className="font-medium">Visit History:</span>
+                      <p className="font-mono font-bold text-slate-700 mt-0.5 break-words">
+                        {diagnosis.Visit_History || diagnosis.Year_month || 'N/A'}
+                      </p>
+                    </div>
                   </div>
                 </div>
               ))}
             </div>
           ) : (
-            <div className="py-8 text-center">
-              <FileText size={28} className="mx-auto text-slate-300 mb-2" />
+            <div className="py-12 text-center">
+              <FileText size={32} className="mx-auto text-slate-300 mb-2" />
               <p className="text-sm font-semibold text-slate-500">
                 No diagnosis records found.
               </p>

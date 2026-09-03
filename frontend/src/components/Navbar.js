@@ -54,7 +54,7 @@ export default function Navbar() {
             <span>Admission Diagnostics</span>
             
             {currentPath.startsWith('/admission') && (
-              <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-sky-500 rounded-full opacity-0 group-hover/link:opacity-100 transition-opacity duration-200" />
+              <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-sky-500 rounded-full transition-opacity duration-200" />
             )}
           </Link>
 
@@ -78,15 +78,15 @@ export default function Navbar() {
             <span>Readmission Diagnostics</span>
             
             {currentPath.startsWith('/readmission') && (
-              <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-sky-500 rounded-full opacity-0 group-hover/link:opacity-100 transition-opacity duration-200" />
+              <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-sky-500 rounded-full transition-opacity duration-200" />
             )}
           </Link>
 
-          {/* ICD Codes Link */}
+          {/* ICD Codes Link - (Fixed Case-sensitivity) */}
           <Link 
             href="/ICDcodes" 
             className={`group/link relative flex items-center gap-2 px-3 py-2 text-base font-semibold transition-colors ${
-              currentPath.startsWith('/ICDcodes') 
+              currentPath.startsWith('/icdcodes') 
                 ? 'text-sky-600' 
                 : 'text-slate-600 hover:text-sky-600'
             }`}
@@ -94,15 +94,15 @@ export default function Navbar() {
             <FileText 
               size={18} 
               className={`transition-colors ${
-                currentPath.startsWith('/ICDcodes') 
+                currentPath.startsWith('/icdcodes') 
                   ? 'text-sky-600' 
                   : 'text-slate-400 group-hover/link:text-sky-600'
               }`} 
             />
-            <span>ICD Codes</span>
+            <span>HCC Version Analytics</span>
             
-            {currentPath.startsWith('/ICDcodes') && (
-              <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-sky-500 rounded-full opacity-0 group-hover/link:opacity-100 transition-opacity duration-200" />
+            {currentPath.startsWith('/icdcodes') && (
+              <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-sky-500 rounded-full transition-opacity duration-200" />
             )}
           </Link>
         </nav>

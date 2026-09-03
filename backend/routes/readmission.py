@@ -384,16 +384,32 @@ def get_readmission_patient_profile(member_number: str):
 
         # 2. Member Diagnoses Rows
         diagnosis_query = """
-            SELECT
-                DIAGNOSIS,
-                Normalized_DIAGNOSIS,
-                DIAGNOSIS_TYPE,
-                SHORT_DESCRIPTION,
-                LONG_DESCRIPTION,
-                Year_month
-            FROM dbo.Hospital_Readmission
-            WHERE Member_Number = ?
-            ORDER BY DIAGNOSIS
+              WITH Distinct_Member_Diagnosis AS (
+                 SELECT DISTINCT
+                     DIAGNOSIS,
+                     Normalized_DIAGNOSIS,
+                     DIAGNOSIS_TYPE,
+                     SHORT_DESCRIPTION,
+                     LONG_DESCRIPTION,
+                     CAST(Year_month AS VARCHAR(10)) AS Year_month
+                 FROM dbo.Hospital_Readmission
+                 WHERE Member_Number = ?
+             )
+             SELECT
+                 DIAGNOSIS,
+                 Normalized_DIAGNOSIS,
+                 MAX(DIAGNOSIS_TYPE) AS DIAGNOSIS_TYPE,
+                 MAX(SHORT_DESCRIPTION) AS SHORT_DESCRIPTION,
+                 MAX(LONG_DESCRIPTION) AS LONG_DESCRIPTION,
+                 COUNT(Year_month) AS Total_Visits,
+                 MAX(Year_month) AS Last_Visit,
+                 STRING_AGG(Year_month, ' | ') WITHIN GROUP (ORDER BY Year_month DESC) AS Visit_History
+             FROM Distinct_Member_Diagnosis
+             GROUP BY 
+                 DIAGNOSIS, 
+                 Normalized_DIAGNOSIS
+             ORDER BY 
+                 Last_Visit DESC
         """
 
         cursor.execute(diagnosis_query, member_number)
