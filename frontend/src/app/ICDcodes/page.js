@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Search, ChevronLeft, ChevronRight, FileText, ChevronDown, ArrowUpRight, RefreshCw, AlertTriangle, UserCheck, Stethoscope } from 'lucide-react';
 import MemberDetailsDrawer from '@/components/MemberDetailsDrawer';
+import ExportCSVButton from '@/components/ExportCSVButton';
 
 export default function ICDCodesPage() {
   const [data, setData] = useState([]);
@@ -100,6 +101,7 @@ export default function ICDCodesPage() {
           </div>
 
           <div className="flex items-center gap-2.5 self-end sm:self-auto">
+         
             {/* Refresh Button */}
             <button
               onClick={fetchRegistryData}
@@ -109,7 +111,16 @@ export default function ICDCodesPage() {
             >
               <RefreshCw size={14} className={loading ? "animate-spin text-blue-600" : ""} />
             </button>
-
+                   <ExportCSVButton 
+    endpoint="/api/icd/export"
+    queryParams={{
+      search: debouncedSearch,
+      condition: conditionCategory
+    }}
+    fileNamePrefix="ICD_Registry_Report"
+    totalRecords={pagination.total_records}
+    buttonText="Export CSV"
+  />
             {/* Showing Records Badge */}
             <div className="inline-flex items-center h-9 gap-2 px-3.5 rounded-xl text-xs font-bold text-blue-700 bg-blue-50 border border-blue-200 shadow-xs whitespace-nowrap">
               <span className="w-2 h-2 rounded-full bg-blue-600"></span>

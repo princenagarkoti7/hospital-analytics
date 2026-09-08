@@ -1,6 +1,7 @@
+// PatientList.jsx
 'use client';
 
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Search,
   Filter,
@@ -8,12 +9,13 @@ import {
   User,
   ArrowUpRight,
   Activity,
-  CheckCircle2,
-  XCircle,
   X,
   ShieldAlert,
   ArrowLeft
 } from 'lucide-react';
+
+// Separate Component Import
+import ExportCSVButton from '@/components/ExportCSVButton'; // Adjust relative path as needed
 
 const API_URL = 'http://127.0.0.1:8000';
 const PAGE_SIZE = 250;
@@ -41,7 +43,7 @@ export default function PatientList() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
-  // 1. Debounce search input to avoid API calls on every keystroke
+  // 1. Debounce search input
   useEffect(() => {
     const handler = setTimeout(() => {
       setDebouncedSearch(searchTerm);
@@ -50,7 +52,7 @@ export default function PatientList() {
     return () => clearTimeout(handler);
   }, [searchTerm]);
 
-  // 2. Fetch Patients (single source of truth for API calls)
+  // 2. Fetch Patients Data
   useEffect(() => {
     const controller = new AbortController();
 
@@ -115,7 +117,7 @@ export default function PatientList() {
     return () => controller.abort();
   }, [currentPage, debouncedSearch, selectedCondition, selectedStatus]);
 
-  // Handlers that update filters and reset page to 1
+  // Handlers
   const handleConditionChange = (e) => {
     setSelectedCondition(e.target.value);
     setCurrentPage(1);
@@ -277,6 +279,21 @@ export default function PatientList() {
                   Reset Filters
                 </button>
               )}
+
+              {/* Imported Standalone Export Component */}
+
+        <ExportCSVButton
+          endpoint="/api/admission/patients/export"
+          queryParams={{
+          condition: selectedCondition,
+          search: debouncedSearch,
+          status: selectedStatus
+          }}
+          fileNamePrefix="Patient_Admission_Report"
+          totalRecords={totalRecords}
+        />
+
+              {/* Showing Badge */}
               <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-100">
                 <span className="w-2 h-2 rounded-full bg-blue-600 animate-pulse"></span>
                 Showing {patients.length} of {totalRecords.toLocaleString()}
@@ -441,11 +458,6 @@ export default function PatientList() {
                             : 'bg-slate-100 text-slate-600 border-slate-200'
                         }`}
                       >
-                        {patient.Actual_Admission_Status === 'Admission' ? (
-                          <CheckCircle2 size={13} className="text-blue-600" />
-                        ) : (
-                          <XCircle size={13} className="text-slate-400" />
-                        )}
                         {patient.Actual_Admission_Status || 'No Admission'}
                       </span>
                     </td>

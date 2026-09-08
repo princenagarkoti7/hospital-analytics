@@ -1,4 +1,7 @@
+import csv
+import io
 from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import StreamingResponse
 from db import get_connection
 
 router = APIRouter(
@@ -428,6 +431,130 @@ def get_readmission_patient_profile(member_number: str):
     except Exception as e:
         print("Database Error:", str(e))
         raise HTTPException(status_code=500, detail="Failed to retrieve patient profile")
+
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+# ==========================================
+# 3. EXPORT PATIENT LIST TO CSV
+# Path: /api/readmission/patients/export
+# ==========================================
+@router.get("/patients/export")
+def export_readmission_patients_csv(
+    search: str = Query("", description="Search by Member ID"),
+    condition: str = Query("ALL", description="Filter by Risk Category (High/Medium/Low Risk)"),
+    status: str = Query("ALL", description="Filter by Actual Readmission Status")
+):
+    conn = None
+    cursor = None
+
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        where_clauses = ["1=1"]
+        params = []
+
+        if search.strip():
+            where_clauses.append("CAST(Member_Number AS VARCHAR(50)) LIKE ?")
+            params.append(f"%{search.strip()}%")
+
+        if condition != "ALL":
+            where_clauses.append("""
+                (CASE 
+                    WHEN Risk_Score >= 7.0 THEN 'High Risk'
+                    WHEN Risk_Score >= 4.0 THEN 'Medium Risk'
+                    ELSE 'Low Risk'
+                END) = ?
+            """)
+            params.append(condition)
+
+        if status != "ALL":
+            where_clauses.append("Actual_Readmission_Status = ?")
+            params.append(status)
+
+        where_sql = " AND ".join(where_clauses)
+
+        # Non-paginated query to export all matching records
+        export_query = f"""
+            WITH UniquePatients AS (
+                SELECT
+                    Member_Number,
+                    Age,
+                    Gender,
+                    Tier,
+                    Risk_Score,
+                    CASE 
+                        WHEN Risk_Score >= 7.0 THEN 'High Risk'
+                        WHEN Risk_Score >= 4.0 THEN 'Medium Risk'
+                        ELSE 'Low Risk'
+                    END AS Risk_Category,
+                    Total_Medical_Cost,
+                    Stage1_Admission_Prob_Pct,
+                    Stage1_Readmission_Status,
+                    Actual_Readmission_Status,
+                    Stage2_Predicted_Time_Window,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY Member_Number
+                        ORDER BY PCP_Number
+                    ) AS rn
+                FROM dbo.Hospital_Readmission
+                WHERE {where_sql}
+            )
+            SELECT
+                Member_Number,
+                Age,
+                Gender,
+                Tier,
+                Risk_Score,
+                Risk_Category,
+                Total_Medical_Cost,
+                Stage1_Admission_Prob_Pct,
+                Stage1_Readmission_Status,
+                Actual_Readmission_Status,
+                Stage2_Predicted_Time_Window
+            FROM UniquePatients
+            WHERE rn = 1
+            ORDER BY Member_Number
+        """
+
+        cursor.execute(export_query, params)
+        rows = cursor.fetchall()
+
+        # CSV Generator
+        def iter_csv():
+            output = io.StringIO()
+            writer = csv.writer(output)
+
+            # CSV Headers
+            headers = [
+                "Member Number", "Age", "Gender", "Tier", 
+                "Risk Score", "Risk Category", "Total Medical Cost", 
+                "Readmission Prob (%)", "Predicted Status", 
+                "Actual Status", "Predicted Time Window"
+            ]
+            writer.writerow(headers)
+            yield output.getvalue()
+            output.seek(0)
+            output.truncate(0)
+
+            # Data Rows
+            for row in rows:
+                writer.writerow(list(row))
+                yield output.getvalue()
+                output.seek(0)
+                output.truncate(0)
+
+        response = StreamingResponse(iter_csv(), media_type="text/csv")
+        response.headers["Content-Disposition"] = "attachment; filename=readmission_patients_export.csv"
+        return response
+
+    except Exception as e:
+        print("Database Export Error:", str(e))
+        raise HTTPException(status_code=500, detail="Failed to export CSV report")
 
     finally:
         if cursor:

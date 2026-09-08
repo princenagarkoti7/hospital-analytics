@@ -1,4 +1,7 @@
+import csv
+import io
 from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import StreamingResponse
 from db import get_connection
 
 router = APIRouter(
@@ -65,7 +68,7 @@ def get_icd_registry(
                  OR MEMBER_LAST_NAME LIKE ?)
             """)
             s = f"%{search.strip()}%"
-            params.extend([s, s, s, s, s, s,s,s])
+            params.extend([s, s, s, s, s, s, s, s])
 
         if condition and condition != "All conditions":
             where_clauses.append("LTRIM(RTRIM(LONG_DESCRIPTION)) = ?")
@@ -144,8 +147,8 @@ def get_member_full_details(member_number: str):
                 COALESCE(CONVERT(VARCHAR(10), PAID_DATE, 120), 'N/A') AS PAID_DATE,
                 COALESCE(CONVERT(VARCHAR(10), SERVICE_DATE, 120), 'N/A') AS SERVICE_DATE,
                 COALESCE(CONVERT(VARCHAR(10), SERVICE_END_DATE, 120), 'N/A') AS SERVICE_END_DATE,
-                COALESCE(PAID_AMOUNT, '0') AS PAID_AMOUNT,
-                COALESCE(PREPAID_AMOUNT, '0') AS PREPAID_AMOUNT,
+                COALESCE(PAID_AMOUNT, 0) AS PAID_AMOUNT,
+                COALESCE(PREPAID_AMOUNT, 0) AS PREPAID_AMOUNT,
                 CAST(COALESCE(PCP_NUMBER, 'N/A') AS VARCHAR(50)) AS PCP_NUMBER,
                 LTRIM(RTRIM(COALESCE(PCP_FIRST_NAME, '') + ' ' + COALESCE(PCP_LAST_NAME, ''))) AS PCP_FULL_NAME,
                 COALESCE(CAST([V24_Code] AS VARCHAR(50)), 'N/A') AS TARGET_HCC_V24,
@@ -177,6 +180,95 @@ def get_member_full_details(member_number: str):
     except Exception as e:
         print("Database Error in member details:", str(e))
         raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+    finally:
+        if cursor: cursor.close()
+        if conn: conn.close()
+
+
+# 4. Export Endpoint for CSV (Fixed Conversion Issue)
+@router.get("/export")
+def export_icd_registry(
+    search: str = Query("", description="Search by Member ID, Diagnosis, Claim, or Description"),
+    condition: str = Query("All conditions", description="Unique Long Description filter")
+):
+    conn = None
+    cursor = None
+
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        where_clauses = ["DIAGNOSIS IS NOT NULL"]
+        params = []
+
+        if search.strip():
+            where_clauses.append("""
+                (CAST(MEMBER_NUMBER AS VARCHAR(50)) LIKE ?
+                 OR CAST(CLAIM_NUMBER AS VARCHAR(50)) LIKE ?
+                 OR DIAGNOSIS LIKE ? 
+                 OR LONG_DESCRIPTION LIKE ?
+                 OR MEMBER_FIRST_NAME LIKE ?
+                 OR PCP_NUMBER LIKE ?
+                 OR LTRIM(RTRIM(COALESCE(PCP_FIRST_NAME, '') + ' ' + COALESCE(PCP_LAST_NAME, ''))) LIKE ?
+                 OR MEMBER_LAST_NAME LIKE ?)
+            """)
+            s = f"%{search.strip()}%"
+            params.extend([s, s, s, s, s, s, s, s])
+
+        if condition and condition != "All conditions":
+            where_clauses.append("LTRIM(RTRIM(LONG_DESCRIPTION)) = ?")
+            params.append(condition.strip())
+
+        where_sql = " AND ".join(where_clauses)
+
+        export_query = f"""
+            SELECT 
+                CAST(COALESCE(PCP_NUMBER, 'N/A') AS VARCHAR(50)) AS [PCP Number],
+                LTRIM(RTRIM(COALESCE(PCP_FIRST_NAME, '') + ' ' + COALESCE(PCP_LAST_NAME, ''))) AS [PCP Full Name],
+                COALESCE(CAST([V24_Code] AS VARCHAR(50)), 'N/A') AS [Target HCC V24],
+                COALESCE(CAST([V28_Code] AS VARCHAR(100)), 'ICD Code removed from V28') AS [Target HCC V28],
+                CAST(MEMBER_NUMBER AS VARCHAR(50)) AS [Member Number],
+                LTRIM(RTRIM(COALESCE(MEMBER_FIRST_NAME, '') + ' ' + COALESCE(MEMBER_LAST_NAME, ''))) AS [Member Name],
+                DIAGNOSIS AS [Diagnosis],
+                CAST(CLAIM_NUMBER AS VARCHAR(50)) AS [Claim Number],
+                COALESCE(CONVERT(VARCHAR(10), SERVICE_DATE, 120), 'N/A') AS [Service Date],
+                COALESCE(CONVERT(VARCHAR(10), SERVICE_END_DATE, 120), 'N/A') AS [Service End Date],
+                COALESCE(CONVERT(VARCHAR(10), PAID_DATE, 120), 'N/A') AS [Paid Date],
+                COALESCE(CAST(PAID_AMOUNT AS VARCHAR(50)), '0.00') AS [Paid Amount],
+                COALESCE(CAST(PREPAID_AMOUNT AS VARCHAR(50)), '0.00') AS [Prepaid Amount],
+                COALESCE(CAST(Year_month AS VARCHAR(50)), 'N/A') AS [Year Month],
+                COALESCE(LONG_DESCRIPTION, 'No description available') AS [Description]
+            FROM dbo.Member_ICDcodes
+            WHERE {where_sql}
+            ORDER BY MEMBER_NUMBER ASC
+        """
+        cursor.execute(export_query, params)
+
+        columns = [col[0] for col in cursor.description]
+        rows = cursor.fetchall()
+
+        output = io.StringIO()
+        writer = csv.writer(output)
+
+        writer.writerow(columns)
+        for row in rows:
+            writer.writerow(row)
+
+        output.seek(0)
+
+        headers = {
+            "Content-Disposition": "attachment; filename=ICD_Registry_Export.csv"
+        }
+
+        return StreamingResponse(
+            iter([output.getvalue()]),
+            media_type="text/csv",
+            headers=headers
+        )
+
+    except Exception as e:
+        print("Export Error:", str(e))
+        raise HTTPException(status_code=500, detail=f"Failed to export data: {str(e)}")
     finally:
         if cursor: cursor.close()
         if conn: conn.close()

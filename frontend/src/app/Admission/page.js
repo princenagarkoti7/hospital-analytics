@@ -1,5 +1,5 @@
 'use client';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -17,6 +17,9 @@ import {
   Users, Activity, AlertTriangle, Percent, RefreshCw, CheckCircle2, ChevronRight 
 } from 'lucide-react';
 
+// Import Reusable Export Button Component
+import ExportPdfButton from '@/components/ExportPdfButton'; // Path apne project folder structure ke according adjust karein
+
 ChartJS.register(
   CategoryScale,
   LinearScale,
@@ -33,6 +36,9 @@ export default function AdmissionPage() {
   const [metrics, setMetrics] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+
+  // PDF Target Ref for capturing the page
+  const printRef = useRef(null);
 
   const fetchAdmissionStats = async () => {
     setLoading(true);
@@ -165,7 +171,7 @@ export default function AdmissionPage() {
   };
 
   return (
-    <main className="min-h-screen bg-slate-50 p-6 md:p-8 font-sans w-full">
+    <main ref={printRef} className="min-h-screen bg-slate-50 p-6 md:p-8 font-sans w-full">
       <div className="max-w-7xl mx-auto space-y-6">
         
         {/* Header */}
@@ -178,12 +184,22 @@ export default function AdmissionPage() {
               Live prediction statistics & model evaluation
             </p>
           </div>
-          <button
-            onClick={fetchAdmissionStats}
-            className="mt-4 md:mt-0 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold px-4 py-2 rounded-xl border border-slate-300 flex items-center gap-2 transition"
-          >
-            <RefreshCw size={14} /> Refresh Data
-          </button>
+          
+          {/* Action Buttons Group */}
+          <div className="mt-4 md:mt-0 flex items-center gap-3">
+            {/* Export PDF Button (Refresh ke Left me) */}
+            <ExportPdfButton 
+              targetRef={printRef} 
+              fileName="Hospital_Admission_Analytics.pdf" 
+            />
+
+            <button
+              onClick={fetchAdmissionStats}
+              className="bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold px-4 py-2 rounded-xl border border-slate-300 flex items-center gap-2 transition"
+            >
+              <RefreshCw size={14} /> Refresh Data
+            </button>
+          </div>
         </div>
 
         {/* 7-Step Workflow Pipeline Component */}

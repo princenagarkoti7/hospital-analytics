@@ -1,4 +1,7 @@
+import csv
+import io
 from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import StreamingResponse
 from db import get_connection
 
 router = APIRouter(
@@ -565,5 +568,118 @@ def get_patient_profile(member_number: str):
         if cursor:
             cursor.close()
 
+        if conn:
+            conn.close()
+
+
+# ==========================================
+# 4. EXPORT CSV API (NEWLY ADDED)
+# Path: /api/admission/patients/export
+# ==========================================
+@router.get("/patients/export")
+def export_patients_csv(
+    search: str = Query("", description="Search by Member ID"),
+    condition: str = Query("ALL", description="Filter by Risk Category"),
+    status: str = Query("ALL", description="Filter by Actual Admission Status")
+):
+    conn = None
+    cursor = None
+
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        where_clause = "WHERE 1=1"
+        params = []
+
+        if search.strip():
+            where_clause += " AND CAST(Member_Number AS VARCHAR(50)) LIKE ?"
+            params.append(f"%{search.strip()}%")
+
+        if condition != "ALL":
+            where_clause += " AND Risk_Category = ?"
+            params.append(condition)
+
+        if status != "ALL":
+            where_clause += " AND Actual_Admission_Status = ?"
+            params.append(status)
+
+        # Query all filtered unique records without pagination (NO OFFSET/FETCH)
+        export_query = f"""
+            WITH UniquePatients AS (
+                SELECT
+                    Member_Number,
+                    Age,
+                    Gender,
+                    Tier,
+                    Risk_Score,
+                    Risk_Category,
+                    Total_Medical_Cost,
+                    Admission_prob_percentage,
+                    Model_Admission_Status,
+                    Actual_Admission_Status,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY Member_Number
+                        ORDER BY Member_Number
+                    ) AS rn
+                FROM dbo.Hospital_Admission
+                {where_clause}
+            )
+            SELECT
+                Member_Number,
+                Age,
+                Gender,
+                Tier,
+                Risk_Score,
+                Risk_Category,
+                Total_Medical_Cost,
+                Admission_prob_percentage,
+                Model_Admission_Status,
+                Actual_Admission_Status
+            FROM UniquePatients
+            WHERE rn = 1
+            ORDER BY Member_Number
+        """
+
+        cursor.execute(export_query, params)
+        rows = cursor.fetchall()
+
+        headers = [
+            "Member Number", "Age", "Gender", "Tier", "Risk Score",
+            "Risk Category", "Total Medical Cost", "Admission Prob (%)",
+            "Model Admission Status", "Actual Admission Status"
+        ]
+
+        def generate_csv_stream():
+            output = io.StringIO()
+            writer = csv.writer(output)
+            writer.writerow(headers)
+            yield output.getvalue()
+            output.seek(0)
+            output.truncate(0)
+
+            for row in rows:
+                writer.writerow(list(row))
+                yield output.getvalue()
+                output.seek(0)
+                output.truncate(0)
+
+        return StreamingResponse(
+            generate_csv_stream(),
+            media_type="text/csv",
+            headers={
+                "Content-Disposition": "attachment; filename=Patient_Admission_Report.csv"
+            }
+        )
+
+    except Exception as e:
+        print("Database Error during Export:", str(e))
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to export patient data: {str(e)}"
+        )
+    finally:
+        if cursor:
+            cursor.close()
         if conn:
             conn.close()

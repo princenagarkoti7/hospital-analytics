@@ -1,5 +1,5 @@
 'use client';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -17,6 +17,9 @@ import {
   Users, Activity, AlertTriangle, Percent, RefreshCw, CheckCircle2, ChevronRight 
 } from 'lucide-react';
 
+// Reusable Export PDF Button Import
+import ExportPdfButton from '@/components/ExportPdfButton';
+
 ChartJS.register(
   CategoryScale,
   LinearScale,
@@ -33,6 +36,9 @@ export default function ReadmissionPage() {
   const [metrics, setMetrics] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+
+  // PDF Target Ref
+  const printRef = useRef(null);
 
   const fetchReadmissionStats = async () => {
     setLoading(true);
@@ -130,7 +136,7 @@ export default function ReadmissionPage() {
     ],
   };
 
-  // Chart 3: Actual vs Model Predicted Readmissions Bar Chart (Fixed property name)
+  // Chart 3: Actual vs Model Predicted Readmissions Bar Chart
   const comparisonData = {
     labels: ['Readmission', 'No Readmission'],
     datasets: [
@@ -156,7 +162,7 @@ export default function ReadmissionPage() {
   };
 
   return (
-    <main className="min-h-screen bg-slate-50 p-6 md:p-8 font-sans w-full">
+    <main ref={printRef} className="min-h-screen bg-slate-50 p-6 md:p-8 font-sans w-full">
       <div className="max-w-7xl mx-auto space-y-6">
         
         {/* Header */}
@@ -169,12 +175,22 @@ export default function ReadmissionPage() {
               Live prediction statistics & model evaluation
             </p>
           </div>
-          <button
-            onClick={fetchReadmissionStats}
-            className="mt-4 md:mt-0 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold px-4 py-2 rounded-xl border border-slate-300 flex items-center gap-2 transition"
-          >
-            <RefreshCw size={14} /> Refresh Data
-          </button>
+          
+          {/* Action Buttons Group */}
+          <div className="mt-4 md:mt-0 flex items-center gap-3">
+            {/* Export PDF Button */}
+            <ExportPdfButton 
+              targetRef={printRef} 
+              fileName="Hospital_Readmission_Analytics.pdf" 
+            />
+
+            <button
+              onClick={fetchReadmissionStats}
+              className="bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold px-4 py-2 rounded-xl border border-slate-300 flex items-center gap-2 transition"
+            >
+              <RefreshCw size={14} /> Refresh Data
+            </button>
+          </div>
         </div>
 
         {/* 7-Step Workflow Pipeline Component */}
@@ -244,7 +260,7 @@ export default function ReadmissionPage() {
           </div>
         </div>
 
-        {/* Charts Grid Row 1: Readmission Time Window & Prediction Result Distribution */}
+        {/* Charts Grid Row 1 */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
             <h2 className="text-base font-bold text-slate-800">Predicted Readmission Time Window</h2>
@@ -277,7 +293,7 @@ export default function ReadmissionPage() {
           </div>
         </div>
 
-        {/* Charts Grid Row 2: Actual vs Model Predicted Readmissions */}
+        {/* Charts Grid Row 2 */}
         <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
           <h2 className="text-base font-bold text-slate-800">Actual vs Model Predicted Readmissions</h2>
           <p className="text-xs text-slate-500 mb-4">Comparison between real status and ML model predictions</p>

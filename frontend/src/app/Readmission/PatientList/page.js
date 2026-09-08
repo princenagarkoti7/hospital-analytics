@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
+import ExportCSVButton from '@/components/ExportCSVButton';
 import {
   Search,
   Filter,
@@ -278,6 +279,16 @@ export default function ReadmissionPatientList() {
                   Reset Filters
                 </button>
               )}
+              <ExportCSVButton
+                endpoint="/api/readmission/patients/export" // Update to your exact API export endpoint
+                queryParams={{
+                search: debouncedSearch,
+                condition: selectedCondition,
+                status: selectedStatus
+             }}
+  fileNamePrefix="Readmission_Patients_Report"
+  totalRecords={totalRecords}
+/>
               <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-100">
                 <span className="w-2 h-2 rounded-full bg-blue-600 animate-pulse"></span>
                 Showing {patients.length} of {totalRecords.toLocaleString()}
