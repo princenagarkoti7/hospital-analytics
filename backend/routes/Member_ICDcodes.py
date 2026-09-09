@@ -37,7 +37,6 @@ def get_unique_conditions():
         if conn: conn.close()
 
 
-# 2. Registry List Query
 @router.get("/registry")
 def get_icd_registry(
     search: str = Query("", description="Search by Member ID, Diagnosis, Claim, or Description"),
@@ -65,10 +64,13 @@ def get_icd_registry(
                  OR MEMBER_FIRST_NAME LIKE ?
                  OR PCP_NUMBER LIKE ?
                  OR LTRIM(RTRIM(COALESCE(PCP_FIRST_NAME, '') + ' ' + COALESCE(PCP_LAST_NAME, ''))) LIKE ?
-                 OR MEMBER_LAST_NAME LIKE ?)
+                 OR MEMBER_LAST_NAME LIKE ?
+                 OR LTRIM(RTRIM(COALESCE(SERVICE_PROVIDER_FIRST_NAME, '') + ' ' + COALESCE(SERVICE_PROVIDER_LAST_NAME, ''))) LIKE ?
+                 OR PAID_PROVIDER_NAME LIKE ?)
             """)
             s = f"%{search.strip()}%"
-            params.extend([s, s, s, s, s, s, s, s])
+            # Updated param list to match all 10 LIKE conditions
+            params.extend([s, s, s, s, s, s, s, s, s, s])
 
         if condition and condition != "All conditions":
             where_clauses.append("LTRIM(RTRIM(LONG_DESCRIPTION)) = ?")
@@ -84,6 +86,8 @@ def get_icd_registry(
             SELECT 
                 CAST(COALESCE(PCP_NUMBER, 'N/A') AS VARCHAR(50)) AS PCP_NUMBER,
                 LTRIM(RTRIM(COALESCE(PCP_FIRST_NAME, '') + ' ' + COALESCE(PCP_LAST_NAME, ''))) AS PCP_FULL_NAME,
+                LTRIM(RTRIM(COALESCE(SERVICE_PROVIDER_FIRST_NAME, '') + ' ' + COALESCE(SERVICE_PROVIDER_LAST_NAME, ''))) AS SERVICE_PROVIDER_FULL_NAME,
+                COALESCE(PAID_PROVIDER_NAME, 'N/A') AS PAID_PROVIDER_NAME,
                 COALESCE(CAST([V24_Code] AS VARCHAR(50)), 'N/A') AS TARGET_HCC_V24,
                 COALESCE(CAST([V28_Code] AS VARCHAR(100)), 'ICD Code removed from V28') AS TARGET_HCC_V28,
                 CAST(MEMBER_NUMBER AS VARCHAR(50)) AS MEMBER_NUMBER,
@@ -147,8 +151,8 @@ def get_member_full_details(member_number: str):
                 COALESCE(CONVERT(VARCHAR(10), PAID_DATE, 120), 'N/A') AS PAID_DATE,
                 COALESCE(CONVERT(VARCHAR(10), SERVICE_DATE, 120), 'N/A') AS SERVICE_DATE,
                 COALESCE(CONVERT(VARCHAR(10), SERVICE_END_DATE, 120), 'N/A') AS SERVICE_END_DATE,
-                COALESCE(PAID_AMOUNT, 0) AS PAID_AMOUNT,
-                COALESCE(PREPAID_AMOUNT, 0) AS PREPAID_AMOUNT,
+                COALESCE(PAID_AMOUNT, '0') AS PAID_AMOUNT,
+                COALESCE(PREPAID_AMOUNT, '0') AS PREPAID_AMOUNT,
                 CAST(COALESCE(PCP_NUMBER, 'N/A') AS VARCHAR(50)) AS PCP_NUMBER,
                 LTRIM(RTRIM(COALESCE(PCP_FIRST_NAME, '') + ' ' + COALESCE(PCP_LAST_NAME, ''))) AS PCP_FULL_NAME,
                 COALESCE(CAST([V24_Code] AS VARCHAR(50)), 'N/A') AS TARGET_HCC_V24,
@@ -184,7 +188,6 @@ def get_member_full_details(member_number: str):
         if cursor: cursor.close()
         if conn: conn.close()
 
-
 # 4. Export Endpoint for CSV (Fixed Conversion Issue)
 @router.get("/export")
 def export_icd_registry(
@@ -210,10 +213,13 @@ def export_icd_registry(
                  OR MEMBER_FIRST_NAME LIKE ?
                  OR PCP_NUMBER LIKE ?
                  OR LTRIM(RTRIM(COALESCE(PCP_FIRST_NAME, '') + ' ' + COALESCE(PCP_LAST_NAME, ''))) LIKE ?
-                 OR MEMBER_LAST_NAME LIKE ?)
+                 OR MEMBER_LAST_NAME LIKE ?
+                 OR LTRIM(RTRIM(COALESCE(SERVICE_PROVIDER_FIRST_NAME, '') + ' ' + COALESCE(SERVICE_PROVIDER_LAST_NAME, ''))) LIKE ?
+                 OR PAID_PROVIDER_NAME LIKE ?)
             """)
             s = f"%{search.strip()}%"
-            params.extend([s, s, s, s, s, s, s, s])
+            # 10 search parameters for the 10 LIKE conditions
+            params.extend([s, s, s, s, s, s, s, s, s, s])
 
         if condition and condition != "All conditions":
             where_clauses.append("LTRIM(RTRIM(LONG_DESCRIPTION)) = ?")
@@ -225,6 +231,8 @@ def export_icd_registry(
             SELECT 
                 CAST(COALESCE(PCP_NUMBER, 'N/A') AS VARCHAR(50)) AS [PCP Number],
                 LTRIM(RTRIM(COALESCE(PCP_FIRST_NAME, '') + ' ' + COALESCE(PCP_LAST_NAME, ''))) AS [PCP Full Name],
+                LTRIM(RTRIM(COALESCE(SERVICE_PROVIDER_FIRST_NAME, '') + ' ' + COALESCE(SERVICE_PROVIDER_LAST_NAME, ''))) AS [Service Provider Name],
+                COALESCE(PAID_PROVIDER_NAME, 'N/A') AS [Paid Provider Name],
                 COALESCE(CAST([V24_Code] AS VARCHAR(50)), 'N/A') AS [Target HCC V24],
                 COALESCE(CAST([V28_Code] AS VARCHAR(100)), 'ICD Code removed from V28') AS [Target HCC V28],
                 CAST(MEMBER_NUMBER AS VARCHAR(50)) AS [Member Number],

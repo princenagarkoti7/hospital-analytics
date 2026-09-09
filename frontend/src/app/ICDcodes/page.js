@@ -1,9 +1,11 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { Search, ChevronLeft, ChevronRight, FileText, ChevronDown, ArrowUpRight, RefreshCw, AlertTriangle, UserCheck, Stethoscope } from 'lucide-react';
+import { Search, ChevronLeft, ChevronRight, FileText, ChevronDown, ArrowUpRight, RefreshCw, AlertTriangle } from 'lucide-react';
 import MemberDetailsDrawer from '@/components/MemberDetailsDrawer';
 import ExportCSVButton from '@/components/ExportCSVButton';
+
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
 
 export default function ICDCodesPage() {
   const [data, setData] = useState([]);
@@ -28,7 +30,7 @@ export default function ICDCodesPage() {
   useEffect(() => {
     const fetchConditions = async () => {
       try {
-        const res = await fetch('http://localhost:8000/api/icd/conditions');
+        const res = await fetch(`${API_BASE_URL}/api/icd/conditions`);
         const result = await res.json();
         if (result.success) {
           setConditionsList(result.conditions || []);
@@ -61,14 +63,19 @@ export default function ICDCodesPage() {
         page_size: '100'
       });
 
-      const response = await fetch(`http://localhost:8000/api/icd/registry?${queryParams}`);
+      const response = await fetch(`${API_BASE_URL}/api/icd/registry?${queryParams}`);
       if (!response.ok) throw new Error('Failed to connect to backend server');
 
       const result = await response.json();
       if (!result.success) throw new Error(result.detail || 'Data retrieval failed');
 
       setData(result.data || []);
-      setPagination(result.pagination);
+      setPagination(result.pagination || {
+        total_records: 0,
+        total_pages: 1,
+        has_next: false,
+        has_previous: false
+      });
     } catch (err) {
       setError(err.message);
     } finally {
@@ -96,31 +103,32 @@ export default function ICDCodesPage() {
               HCC Version & Provider Analytics
             </h1>
             <p className="text-xs text-slate-500 font-medium">
-              Manage member diagnoses, PCP details, and CMS HCC V24/V28 model transitions
+              Manage member diagnoses, PCP details, Service & Paid Providers, and CMS HCC V24/V28 transitions
             </p>
           </div>
 
           <div className="flex items-center gap-2.5 self-end sm:self-auto">
-         
             {/* Refresh Button */}
             <button
               onClick={fetchRegistryData}
               disabled={loading}
-              className="inline-flex items-center justify-center h-9 w-9 rounded-xl bg-white border border-slate-200 text-slate-500 hover:text-slate-800 hover:bg-slate-50 transition shadow-xs disabled:opacity-50"
+              className="inline-flex items-center justify-center h-9 w-9 rounded-xl bg-white border border-slate-200 text-slate-500 hover:text-slate-800 hover:bg-slate-50 transition shadow-xs disabled:opacity-50 cursor-pointer"
               title="Refresh Data"
             >
               <RefreshCw size={14} className={loading ? "animate-spin text-blue-600" : ""} />
             </button>
-                   <ExportCSVButton 
-    endpoint="/api/icd/export"
-    queryParams={{
-      search: debouncedSearch,
-      condition: conditionCategory
-    }}
-    fileNamePrefix="ICD_Registry_Report"
-    totalRecords={pagination.total_records}
-    buttonText="Export CSV"
-  />
+            
+            <ExportCSVButton 
+              endpoint="/api/icd/export"
+              queryParams={{
+                search: debouncedSearch,
+                condition: conditionCategory
+              }}
+              fileNamePrefix="ICD_Registry_Report"
+              totalRecords={pagination.total_records}
+              buttonText="Export CSV"
+            />
+
             {/* Showing Records Badge */}
             <div className="inline-flex items-center h-9 gap-2 px-3.5 rounded-xl text-xs font-bold text-blue-700 bg-blue-50 border border-blue-200 shadow-xs whitespace-nowrap">
               <span className="w-2 h-2 rounded-full bg-blue-600"></span>
@@ -129,7 +137,7 @@ export default function ICDCodesPage() {
           </div>
         </div>
 
-        {/* Filters & Comprehensive Search Bar */}
+        {/* Filters & Search Bar */}
         <div className="bg-white p-3.5 rounded-2xl border border-slate-200/90 shadow-xs flex flex-col sm:flex-row items-center gap-3">
 
           {/* Condition Dropdown */}
@@ -149,13 +157,13 @@ export default function ICDCodesPage() {
             <ChevronDown size={14} className="absolute right-3 top-2.5 text-slate-400 pointer-events-none" />
           </div>
 
-          {/* Enhanced Search Input */}
+          {/* Search Input */}
           <div className="relative flex-1 w-full">
             <input
               type="text"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Search by Provider ID, PCP Name, Member ID, Patient Name, Claim, HCC Code..."
+              placeholder="Search by PCP, Service/Paid Provider, Member ID, Patient Name, Claim, HCC Code..."
               className="w-full h-9 pl-9 pr-4 text-xs font-medium border border-slate-200 rounded-xl bg-slate-50 hover:bg-white focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition placeholder:text-slate-400"
             />
             <Search size={14} className="absolute left-3 top-2.5 text-slate-400" />
@@ -171,26 +179,28 @@ export default function ICDCodesPage() {
           </div>
         )}
 
-        {/* Clean Formatted Table */}
+        {/* Formatted Table */}
         <div className="bg-white border border-slate-200/90 rounded-2xl shadow-xs overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse table-auto">
               <thead>
                 <tr className="border-b border-slate-100 bg-slate-50/70 text-[11px] font-extrabold uppercase tracking-wider text-slate-500">
-                  <th className="py-3 px-4 min-w-[180px]">Provider Details</th>
-                  <th className="py-3 px-4 min-w-[170px]">Member Info</th>
-                  <th className="py-3 px-4 min-w-[120px]">Diagnosis</th>
-                  <th className="py-3 px-4 min-w-[130px]">HCC V24</th>
-                  <th className="py-3 px-4 min-w-[150px]">HCC V28</th>
-                  <th className="py-3 px-4 min-w-[140px]">Claim Details</th>
-                  <th className="py-3 px-4 min-w-[280px]">Description</th>
+                  <th className="py-3 px-4 min-w-[160px]">PCP Details</th>
+                  <th className="py-3 px-4 min-w-[180px]">Service Provider</th>
+                  <th className="py-3 px-4 min-w-[170px]">Paid Provider</th>
+                  <th className="py-3 px-4 min-w-[160px]">Member Info</th>
+                  <th className="py-3 px-4 min-w-[110px]">Diagnosis</th>
+                  <th className="py-3 px-4 min-w-[120px]">HCC V24</th>
+                  <th className="py-3 px-4 min-w-[140px]">HCC V28</th>
+                  <th className="py-3 px-4 min-w-[130px]">Claim Details</th>
+                  <th className="py-3 px-4 min-w-[250px]">Description</th>
                 </tr>
               </thead>
 
               <tbody className="divide-y divide-slate-100 text-xs">
                 {loading ? (
                   <tr>
-                    <td colSpan={7} className="py-14 text-center text-slate-400 font-medium">
+                    <td colSpan={9} className="py-14 text-center text-slate-400 font-medium">
                       <RefreshCw size={22} className="animate-spin mx-auto text-blue-600 mb-2" />
                       Loading records from database...
                     </td>
@@ -204,7 +214,7 @@ export default function ICDCodesPage() {
                         key={`${row.CLAIM_NUMBER || row.MEMBER_NUMBER}-${idx}`} 
                         className="hover:bg-slate-50/70 transition-colors group"
                       >
-                        {/* PCP / Provider Info (Pehle Shift Kiya Gaya) */}
+                        {/* PCP Details */}
                         <td className="py-3 px-4">
                           <p className="font-semibold text-slate-800 leading-tight">
                             {row.PCP_FULL_NAME?.trim() ? row.PCP_FULL_NAME : 'N/A'}
@@ -214,15 +224,30 @@ export default function ICDCodesPage() {
                           </p>
                         </td>
 
-                        {/* Member Info: ID & Name grouped cleanly */}
+                        {/* Service Provider */}
                         <td className="py-3 px-4">
-                          <div 
-                            className="font-bold text-blue-600 hover:text-blue-800 cursor-pointer inline-flex items-center gap-1"
+                          <p className="font-semibold text-slate-800 leading-tight">
+                            {row.SERVICE_PROVIDER_FULL_NAME?.trim() ? row.SERVICE_PROVIDER_FULL_NAME : 'N/A'}
+                          </p>
+                        </td>
+
+                        {/* Paid Provider */}
+                        <td className="py-3 px-4">
+                          <p className="font-medium text-slate-700 leading-tight">
+                            {row.PAID_PROVIDER_NAME || 'N/A'}
+                          </p>
+                        </td>
+
+                        {/* Member Info */}
+                        <td className="py-3 px-4">
+                          <button 
+                            type="button"
+                            className="font-bold text-blue-600 hover:text-blue-800 hover:underline cursor-pointer inline-flex items-center gap-1 focus:outline-none"
                             onClick={() => setSelectedMember(row)}
                           >
                             <span>{row.MEMBER_NUMBER}</span>
                             <ArrowUpRight size={13} className="opacity-0 group-hover:opacity-100 transition-opacity" />
-                          </div>
+                          </button>
                           <p className="text-[11px] font-medium text-slate-600 mt-0.5">
                             {row.MEMBER_NAME || 'N/A'}
                           </p>
@@ -255,7 +280,7 @@ export default function ICDCodesPage() {
                           )}
                         </td>
 
-                        {/* Claim & Date grouped */}
+                        {/* Claim & Date */}
                         <td className="py-3 px-4">
                           <p className="font-mono font-medium text-slate-700 leading-tight">
                             {row.CLAIM_NUMBER}
@@ -274,7 +299,7 @@ export default function ICDCodesPage() {
                   })
                 ) : (
                   <tr>
-                    <td colSpan={7} className="py-12 text-center">
+                    <td colSpan={9} className="py-12 text-center">
                       <FileText size={32} className="mx-auto text-slate-300 mb-2" />
                       <p className="text-sm font-semibold text-slate-500">No records found matching your filters.</p>
                     </td>
@@ -295,7 +320,7 @@ export default function ICDCodesPage() {
               <button 
                 onClick={() => setCurrentPage(p => Math.max(p - 1, 1))}
                 disabled={!pagination.has_previous || loading}
-                className="p-1.5 rounded-lg border border-slate-200 text-slate-600 bg-white hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition"
+                className="p-1.5 rounded-lg border border-slate-200 text-slate-600 bg-white hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition cursor-pointer"
               >
                 <ChevronLeft size={16} />
               </button>
@@ -307,7 +332,7 @@ export default function ICDCodesPage() {
               <button 
                 onClick={() => setCurrentPage(p => p + 1)}
                 disabled={!pagination.has_next || loading}
-                className="p-1.5 rounded-lg border border-slate-200 text-slate-600 bg-white hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition"
+                className="p-1.5 rounded-lg border border-slate-200 text-slate-600 bg-white hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition cursor-pointer"
               >
                 <ChevronRight size={16} />
               </button>
@@ -318,10 +343,13 @@ export default function ICDCodesPage() {
       </div>
 
       {/* Side Drawer Component */}
-      <MemberDetailsDrawer 
-        member={selectedMember} 
-        onClose={() => setSelectedMember(null)} 
-      />
+      {selectedMember && (
+        <MemberDetailsDrawer 
+          member={selectedMember} 
+          selectedMemberId={selectedMember.MEMBER_NUMBER}
+          onClose={() => setSelectedMember(null)} 
+        />
+      )}
     </div>
   );
 }
