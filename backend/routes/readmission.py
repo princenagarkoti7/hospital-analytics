@@ -320,7 +320,7 @@ def get_readmission_patient_profile(member_number: str):
         conn = get_connection()
         cursor = conn.cursor()
 
-        # 1. Base Member Row
+        # 1. Base Member Row (Includes new Last PCP encountered columns)
         patient_query = """
             SELECT TOP 1
                 Member_Number,
@@ -371,7 +371,11 @@ def get_readmission_patient_profile(member_number: str):
                 Stage2_Predicted_Time_Window,
                 Cascade_Prediction_Correct,
                 Actual_Readmission_Status,
-                Actual_Target_Bucket
+                Actual_Target_Bucket,
+                CAST(Last_PCP_Encountered_Number AS VARCHAR(50)) AS Last_PCP_Encountered_Number,
+                Last_PCP_Encountered_Last_Name,
+                Last_PCP_Encountered_First_Name,
+                COALESCE(CONVERT(VARCHAR(10), Last_PCP_Encounter_Date, 120), 'N/A') AS Last_PCP_Encounter_Date
             FROM dbo.Hospital_Readmission
             WHERE Member_Number = ?
         """
@@ -439,7 +443,7 @@ def get_readmission_patient_profile(member_number: str):
             conn.close()
 
 # ==========================================
-# 3. EXPORT PATIENT LIST TO CSV
+# 4. EXPORT PATIENT LIST TO CSV
 # Path: /api/readmission/patients/export
 # ==========================================
 @router.get("/patients/export")
