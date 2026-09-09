@@ -9,6 +9,9 @@ router = APIRouter(
     tags=["Admission"]
 )
 
+# ==========================================
+# 1. STATS API
+# ==========================================
 @router.get("/stats")
 def get_admission_stats():
     conn = None
@@ -20,21 +23,20 @@ def get_admission_stats():
 
         # 1. Basic metrics
         cursor.execute("""
-                        with unique_members as 
-              (select 
-			     HA.*,
-                 row_number() over (partition by HA.Member_Number order by HA.PCP_Number) as rnk
-               FROM dbo._Hospital_Admission HA
-              )
-              SELECT 
+            WITH unique_members AS (
+                SELECT 
+                    HA.*,
+                    ROW_NUMBER() OVER (PARTITION BY HA.Member_Number ORDER BY HA.PCP_Number) AS rnk
+                FROM dbo._Hospital_Admission HA
+            )
+            SELECT 
                 COUNT(Member_Number) AS number_of_patients,
                 COUNT(Model_Admission_Status) AS total_predictions
-              FROM unique_members
-               where rnk='1'
+            FROM unique_members
+            WHERE rnk = '1'
         """)
 
         row = cursor.fetchone()
-
         number_of_patients = int(row.number_of_patients or 0)
         total_predictions = int(row.total_predictions or 0)
 
@@ -73,19 +75,12 @@ def get_admission_stats():
         """)
 
         row = cursor.fetchone()
-
         total_rows = int(row.total_rows or 0)
         incorrect_count = int(row.incorrect_count or 0)
 
         if total_rows > 0:
-            error_percentage = round(
-                (incorrect_count / total_rows) * 100,
-                2
-            )
-            accuracy_percentage = round(
-                100 - error_percentage,
-                2
-            )
+            error_percentage = round((incorrect_count / total_rows) * 100, 2)
+            accuracy_percentage = round(100 - error_percentage, 2)
         else:
             error_percentage = 0.0
             accuracy_percentage = 100.0
@@ -101,7 +96,6 @@ def get_admission_stats():
         """)
 
         prediction_results = {}
-
         for row in cursor.fetchall():
             result = str(row.Prediction_Result).strip()
             prediction_results[result] = int(row.total)
@@ -109,39 +103,14 @@ def get_admission_stats():
         # 5. Actual vs predicted admissions
         cursor.execute("""
             SELECT
-                SUM(
-                    CASE
-                        WHEN Actual_Admission_Status = 'Admission'
-                        THEN 1 ELSE 0
-                    END
-                ) AS actual_admissions,
-
-                SUM(
-                    CASE
-                        WHEN Actual_Admission_Status = 'No Admission'
-                        THEN 1 ELSE 0
-                    END
-                ) AS actual_no_admissions,
-
-                SUM(
-                    CASE
-                        WHEN Model_Admission_Status = 'Admission'
-                        THEN 1 ELSE 0
-                    END
-                ) AS predicted_admissions,
-
-                SUM(
-                    CASE
-                        WHEN Model_Admission_Status = 'No Admission'
-                        THEN 1 ELSE 0
-                    END
-                ) AS predicted_no_admissions
-
+                SUM(CASE WHEN Actual_Admission_Status = 'Admission' THEN 1 ELSE 0 END) AS actual_admissions,
+                SUM(CASE WHEN Actual_Admission_Status = 'No Admission' THEN 1 ELSE 0 END) AS actual_no_admissions,
+                SUM(CASE WHEN Model_Admission_Status = 'Admission' THEN 1 ELSE 0 END) AS predicted_admissions,
+                SUM(CASE WHEN Model_Admission_Status = 'No Admission' THEN 1 ELSE 0 END) AS predicted_no_admissions
             FROM dbo._Hospital_Admission
         """)
 
         row = cursor.fetchone()
-
         admission_comparison = {
             "actual_admissions": int(row.actual_admissions or 0),
             "actual_no_admissions": int(row.actual_no_admissions or 0),
@@ -160,7 +129,6 @@ def get_admission_stats():
         """)
 
         gender_distribution = {}
-
         for row in cursor.fetchall():
             gender = str(row.Gender).strip()
             gender_distribution[gender] = int(row.total)
@@ -179,23 +147,20 @@ def get_admission_stats():
 
     except Exception as e:
         print("Database Error:", str(e))
-
         raise HTTPException(
             status_code=500,
             detail=f"Failed to retrieve admission statistics: {str(e)}"
         )
-
     finally:
         if cursor:
             cursor.close()
-
         if conn:
             conn.close()
 
-    # ==========================================
+
+# ==========================================
 # 2. PATIENT LIST API
-# Path: /admission/patients
-# Used in: /Admission/PatientList (Frontend)
+# Path: /api/admission/patients
 # ==========================================
 @router.get("/patients")
 def get_patient_list(
@@ -214,34 +179,20 @@ def get_patient_list(
 
         offset = (page - 1) * page_size
 
-        # =========================================================
-        # FILTERS
-        # =========================================================
-
         where_clause = "WHERE 1=1"
         params = []
 
         if search.strip():
-            where_clause += """
-                AND CAST(Member_Number AS VARCHAR(50)) LIKE ?
-            """
+            where_clause += " AND CAST(Member_Number AS VARCHAR(50)) LIKE ?"
             params.append(f"%{search.strip()}%")
 
         if condition != "ALL":
-            where_clause += """
-                AND Risk_Category = ?
-            """
+            where_clause += " AND Risk_Category = ?"
             params.append(condition)
 
         if status != "ALL":
-            where_clause += """
-                AND Actual_Admission_Status = ?
-            """
+            where_clause += " AND Actual_Admission_Status = ?"
             params.append(status)
-
-        # =========================================================
-        # UNIQUE PATIENTS
-        # =========================================================
 
         unique_patients_cte = f"""
             WITH UniquePatients AS (
@@ -256,82 +207,42 @@ def get_patient_list(
                     Admission_prob_percentage,
                     Model_Admission_Status,
                     Actual_Admission_Status,
-
                     ROW_NUMBER() OVER (
                         PARTITION BY Member_Number
                         ORDER BY Member_Number
                     ) AS rn
-
                 FROM dbo.Hospital_Admission
-
                 {where_clause}
             )
         """
 
-        # =========================================================
-        # TOTAL FILTERED UNIQUE PATIENTS
-        # =========================================================
-
         count_query = f"""
             {unique_patients_cte}
-
             SELECT COUNT(*)
             FROM UniquePatients
             WHERE rn = 1
         """
-
         cursor.execute(count_query, params)
-
         total_count = cursor.fetchone()[0]
-
-        # =========================================================
-        # GLOBAL STATS
-        #
-        # These are calculated across ALL filtered patients,
-        # NOT just the current 250 rows.
-        # =========================================================
 
         stats_query = f"""
             {unique_patients_cte}
-
             SELECT
                 COUNT(*) AS total_registrations,
-
-                SUM(
-                    CASE
-                        WHEN Risk_Category = 'High Risk'
-                        THEN 1
-                        ELSE 0
-                    END
-                ) AS high_risk_cohorts,
-
-                SUM(
-                    CASE
-                        WHEN Actual_Admission_Status = 'Admission'
-                        THEN 1
-                        ELSE 0
-                    END
-                ) AS confirmed_admissions
-
+                SUM(CASE WHEN Risk_Category = 'High Risk' THEN 1 ELSE 0 END) AS high_risk_cohorts,
+                SUM(CASE WHEN Actual_Admission_Status = 'Admission' THEN 1 ELSE 0 END) AS confirmed_admissions
             FROM UniquePatients
             WHERE rn = 1
         """
-
         cursor.execute(stats_query, params)
-
         stats_row = cursor.fetchone()
 
         total_registrations = stats_row[0] or 0
         high_risk_cohorts = stats_row[1] or 0
         confirmed_admissions = stats_row[2] or 0
 
-        # =========================================================
-        # PAGINATED PATIENT DATA
-        # =========================================================
-
         data_query = f"""
             {unique_patients_cte}
-
             SELECT
                 Member_Number,
                 Age,
@@ -343,40 +254,17 @@ def get_patient_list(
                 Admission_prob_percentage,
                 Model_Admission_Status,
                 Actual_Admission_Status
-
             FROM UniquePatients
-
             WHERE rn = 1
-
             ORDER BY Member_Number
-
             OFFSET ? ROWS
             FETCH NEXT ? ROWS ONLY
         """
+        data_params = params + [offset, page_size]
+        cursor.execute(data_query, data_params)
 
-        data_params = params + [
-            offset,
-            page_size
-        ]
-
-        cursor.execute(
-            data_query,
-            data_params
-        )
-
-        columns = [
-            column[0]
-            for column in cursor.description
-        ]
-
-        results = [
-            dict(zip(columns, row))
-            for row in cursor.fetchall()
-        ]
-
-        # =========================================================
-        # PAGINATION
-        # =========================================================
+        columns = [column[0] for column in cursor.description]
+        results = [dict(zip(columns, row)) for row in cursor.fetchall()]
 
         total_pages = (
             (total_count + page_size - 1) // page_size
@@ -384,21 +272,14 @@ def get_patient_list(
             else 0
         )
 
-        # =========================================================
-        # RESPONSE
-        # =========================================================
-
         return {
             "success": True,
-
             "data": results,
-
             "stats": {
                 "total_registrations": total_registrations,
                 "high_risk_cohorts": high_risk_cohorts,
                 "confirmed_admissions": confirmed_admissions
             },
-
             "pagination": {
                 "page": page,
                 "page_size": page_size,
@@ -410,25 +291,18 @@ def get_patient_list(
         }
 
     except Exception as e:
-
         print("Database Error:", str(e))
-
-        raise HTTPException(
-            status_code=500,
-            detail="Failed to retrieve patient data"
-        )
-
+        raise HTTPException(status_code=500, detail="Failed to retrieve patient data")
     finally:
-
         if cursor:
             cursor.close()
-
         if conn:
             conn.close()
+
+
 # ==========================================
 # 3. PATIENT PROFILE DETAIL API
-# Path: /admission/patient/{member_id}
-# Used in: /Admission/PatientList/PatientProfile (Frontend)
+# Path: /api/admission/patient/{member_number}
 # ==========================================
 @router.get("/patient/{member_number}")
 def get_patient_profile(member_number: str):
@@ -439,11 +313,7 @@ def get_patient_profile(member_number: str):
         conn = get_connection()
         cursor = conn.cursor()
 
-        # ---------------------------------------------------------
-        # 1. Get patient information
-        #    All non-diagnosis fields are the same across rows,
-        #    so we only need one row.
-        # ---------------------------------------------------------
+        # 1. Base Member Row (Includes Last PCP Encounter Details)
         patient_query = """
             SELECT TOP 1
                 Member_Number,
@@ -481,13 +351,16 @@ def get_patient_profile(member_number: str):
                 Prediction_Correct,
                 Prediction_Result,
                 Target,
-                target_predicted
+                target_predicted,
+                CAST(Last_PCP_Encountered_Number AS VARCHAR(50)) AS Last_PCP_Encountered_Number,
+                Last_PCP_Encountered_Last_Name,
+                Last_PCP_Encountered_First_Name,
+                COALESCE(CONVERT(VARCHAR(10), Last_PCP_Encounter_Date, 120), 'N/A') AS Last_PCP_Encounter_Date
             FROM dbo.Hospital_Admission
-            WHERE Member_Number = ?
+            WHERE CAST(Member_Number AS VARCHAR(50)) = ?
         """
 
-        cursor.execute(patient_query, member_number)
-
+        cursor.execute(patient_query, str(member_number).strip())
         row = cursor.fetchone()
 
         if not row:
@@ -497,55 +370,48 @@ def get_patient_profile(member_number: str):
             )
 
         columns = [column[0] for column in cursor.description]
-
         patient = dict(zip(columns, row))
 
-        # ---------------------------------------------------------
-        # 2. Get ALL diagnosis rows for this patient
-        # ---------------------------------------------------------
-        diagnosis_query = """
-              WITH Distinct_Member_Diagnosis AS (
-                 SELECT DISTINCT
-                     DIAGNOSIS,
-                     Normalized_DIAGNOSIS,
-                     DIAGNOSIS_TYPE,
-                     SHORT_DESCRIPTION,
-                     LONG_DESCRIPTION,
-                     CAST(Year_month AS VARCHAR(10)) AS Year_month
-                 FROM dbo.Hospital_Admission
-                 WHERE Member_Number = ?
-             )
-             SELECT
-                 DIAGNOSIS,
-                 Normalized_DIAGNOSIS,
-                 MAX(DIAGNOSIS_TYPE) AS DIAGNOSIS_TYPE,
-                 MAX(SHORT_DESCRIPTION) AS SHORT_DESCRIPTION,
-                 MAX(LONG_DESCRIPTION) AS LONG_DESCRIPTION,
-                 COUNT(Year_month) AS Total_Visits,
-                 MAX(Year_month) AS Last_Visit,
-                 STRING_AGG(Year_month, ' | ') WITHIN GROUP (ORDER BY Year_month DESC) AS Visit_History
-             FROM Distinct_Member_Diagnosis
-             GROUP BY 
-                 DIAGNOSIS, 
-                 Normalized_DIAGNOSIS
-             ORDER BY 
-                 Last_Visit DESC
-        """
+        # 2. Diagnoses history (Safely handled)
+        diagnoses = []
+        try:
+            diagnosis_query = """
+                WITH Distinct_Member_Diagnosis AS (
+                    SELECT DISTINCT
+                        DIAGNOSIS,
+                        Normalized_DIAGNOSIS,
+                        DIAGNOSIS_TYPE,
+                        SHORT_DESCRIPTION,
+                        LONG_DESCRIPTION,
+                        CAST(Year_month AS VARCHAR(10)) AS Year_month
+                    FROM dbo.Hospital_Admission
+                    WHERE CAST(Member_Number AS VARCHAR(50)) = ?
+                )
+                SELECT
+                    DIAGNOSIS,
+                    Normalized_DIAGNOSIS,
+                    MAX(DIAGNOSIS_TYPE) AS DIAGNOSIS_TYPE,
+                    MAX(SHORT_DESCRIPTION) AS SHORT_DESCRIPTION,
+                    MAX(LONG_DESCRIPTION) AS LONG_DESCRIPTION,
+                    COUNT(Year_month) AS Total_Visits,
+                    MAX(Year_month) AS Last_Visit,
+                    STRING_AGG(Year_month, ' | ') WITHIN GROUP (ORDER BY Year_month DESC) AS Visit_History
+                FROM Distinct_Member_Diagnosis
+                GROUP BY 
+                    DIAGNOSIS, 
+                    Normalized_DIAGNOSIS
+                ORDER BY 
+                    Last_Visit DESC
+            """
+            cursor.execute(diagnosis_query, str(member_number).strip())
+            diagnosis_columns = [column[0] for column in cursor.description]
+            diagnoses = [
+                dict(zip(diagnosis_columns, d_row))
+                for d_row in cursor.fetchall()
+            ]
+        except Exception:
+            diagnoses = []
 
-        cursor.execute(diagnosis_query, member_number)
-
-        diagnosis_columns = [
-            column[0] for column in cursor.description
-        ]
-
-        diagnoses = [
-            dict(zip(diagnosis_columns, diagnosis_row))
-            for diagnosis_row in cursor.fetchall()
-        ]
-
-        # ---------------------------------------------------------
-        # 3. Add diagnoses to patient response
-        # ---------------------------------------------------------
         patient["Diagnoses"] = diagnoses
 
         return {
@@ -555,25 +421,21 @@ def get_patient_profile(member_number: str):
 
     except HTTPException:
         raise
-
     except Exception as e:
-        print("Database Error:", str(e))
-
+        print(f"Error in get_patient_profile: {str(e)}")
         raise HTTPException(
             status_code=500,
-            detail="Failed to retrieve patient profile"
+            detail=f"Failed to retrieve patient profile: {str(e)}"
         )
-
     finally:
         if cursor:
             cursor.close()
-
         if conn:
             conn.close()
 
 
 # ==========================================
-# 4. EXPORT CSV API (NEWLY ADDED)
+# 4. EXPORT CSV API
 # Path: /api/admission/patients/export
 # ==========================================
 @router.get("/patients/export")
@@ -604,7 +466,6 @@ def export_patients_csv(
             where_clause += " AND Actual_Admission_Status = ?"
             params.append(status)
 
-        # Query all filtered unique records without pagination (NO OFFSET/FETCH)
         export_query = f"""
             WITH UniquePatients AS (
                 SELECT

@@ -67,7 +67,6 @@ function PatientProfileContent() {
         setLoading(true);
         setError('');
 
-        // Backend FastAPI URL ab match kar diya gaya hai: /api/readmission/patient/{member_number}
         const response = await fetch(
           `${API_URL}/api/readmission/patient/${encodeURIComponent(memberNumber)}`
         );
@@ -216,6 +215,15 @@ function PatientProfileContent() {
   }
 
   const diagnoses = Array.isArray(patient.Diagnoses) ? patient.Diagnoses : [];
+
+  // Helper to compose the Last PCP Name cleanly
+  const lastPcpFullName = [
+    patient.Last_PCP_Encountered_First_Name,
+    patient.Last_PCP_Encountered_Last_Name
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .trim() || 'N/A';
 
   return (
     <div className="w-full px-4 sm:px-6 lg:px-8 py-8 font-sans space-y-6 text-slate-900 bg-slate-50/50 min-h-screen">
@@ -376,6 +384,7 @@ function PatientProfileContent() {
           </div>
         </div>
 
+        {/* Clinical Utilization (Updated with 4 new columns) */}
         <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden flex flex-col">
           <div className="p-4 border-b border-slate-100 bg-slate-50/50 flex items-center gap-2">
             <Stethoscope size={18} className="text-blue-500" />
@@ -413,6 +422,20 @@ function PatientProfileContent() {
             <div className="py-2.5 flex justify-between items-center">
               <span className="text-slate-500 font-medium">Unique Providers:</span>
               <span className="font-bold text-slate-800">{patient.Unique_Providers ?? 'N/A'}</span>
+            </div>
+            
+            {/* New Encounter Details */}
+            <div className="py-2.5 flex justify-between items-center">
+              <span className="text-slate-500 font-medium">Last PCP Name:</span>
+              <span className="font-bold text-slate-800">{lastPcpFullName}</span>
+            </div>
+            <div className="py-2.5 flex justify-between items-center">
+              <span className="text-slate-500 font-medium">Last PCP ID:</span>
+              <span className="font-mono font-bold text-slate-800">{patient.Last_PCP_Encountered_Number || 'N/A'}</span>
+            </div>
+            <div className="py-2.5 flex justify-between items-center">
+              <span className="text-slate-500 font-medium">Last PCP Encounter Date:</span>
+              <span className="font-bold text-slate-800">{patient.Last_PCP_Encounter_Date || 'N/A'}</span>
             </div>
           </div>
         </div>
@@ -492,7 +515,7 @@ function PatientProfileContent() {
         </div>
       </div>
 
-{/* Diagnoses History Component */}
+      {/* Diagnoses History Component */}
       <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden">
         <div className="p-4 border-b border-slate-100 bg-slate-50/50 flex items-center gap-2">
           <FileText size={18} className="text-indigo-500" />
@@ -504,7 +527,6 @@ function PatientProfileContent() {
         
         <div className="p-4">
           {diagnoses.length > 0 ? (
-            /* 2-Column Responsive Grid */
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {diagnoses.map((diagnosis, index) => (
                 <div
@@ -512,7 +534,6 @@ function PatientProfileContent() {
                   className="p-5 rounded-2xl border border-slate-200/90 bg-white hover:border-slate-300 transition-shadow shadow-xs flex flex-col justify-between space-y-3"
                 >
                   <div className="space-y-2">
-                    {/* Diagnosis Header: Title & Badge */}
                     <div className="flex items-start justify-between gap-2">
                       <h4 className="text-sm font-black text-slate-900 leading-snug">
                         {diagnosis.SHORT_DESCRIPTION ||
@@ -527,7 +548,6 @@ function PatientProfileContent() {
                       )}
                     </div>
 
-                    {/* Codes */}
                     <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500">
                       <div>
                         Diagnosis: <span className="font-bold text-slate-800">{diagnosis.DIAGNOSIS || 'N/A'}</span>
@@ -537,7 +557,6 @@ function PatientProfileContent() {
                       </div>
                     </div>
 
-                    {/* Description */}
                     {diagnosis.LONG_DESCRIPTION && (
                       <p className="text-xs text-slate-600 leading-relaxed font-medium line-clamp-2">
                         {diagnosis.LONG_DESCRIPTION}
@@ -545,7 +564,6 @@ function PatientProfileContent() {
                     )}
                   </div>
 
-                  {/* Visit Stats Footer */}
                   <div className="pt-3 border-t border-slate-100/80 space-y-1.5 text-xs">
                     <div className="flex items-center justify-between">
                       <span className="text-slate-500 font-medium">Total Visits:</span>
