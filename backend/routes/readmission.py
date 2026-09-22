@@ -198,7 +198,6 @@ def get_readmission_patient_list(
 
         where_sql = " AND ".join(where_clauses)
 
-        # Joins with dbo.Member_ICDcodes via OUTER APPLY to get Member Name cleanly
         unique_patients_cte = f"""
             WITH UniquePatients AS (
                 SELECT
@@ -234,11 +233,9 @@ def get_readmission_patient_list(
             )
         """
 
-        # Filtered Total Count
         cursor.execute(f"{unique_patients_cte} SELECT COUNT(*) FROM UniquePatients WHERE rn = 1", params)
         total_count = cursor.fetchone()[0]
 
-        # Aggregate Cohort Stats
         stats_query = f"""
             {unique_patients_cte}
             SELECT
@@ -255,7 +252,6 @@ def get_readmission_patient_list(
         high_risk_cohorts = stats_row[1] or 0
         confirmed_readmissions = stats_row[2] or 0
 
-        # Paginated Rows (Includes Member_Name and Risk_Score)
         data_query = f"""
             {unique_patients_cte}
             SELECT
@@ -327,7 +323,7 @@ def get_readmission_patient_profile(member_number: str):
         conn = get_connection()
         cursor = conn.cursor()
 
-        # 1. Base Member Row joined with Member_ICDcodes
+        # 1. Base Member Profile Row
         patient_query = """
             SELECT TOP 1
                 HA.Member_Number,
@@ -404,61 +400,132 @@ def get_readmission_patient_profile(member_number: str):
         columns = [column[0] for column in cursor.description]
         patient = dict(zip(columns, row))
 
-        # 2. Grouped Member Diagnoses Rows (Used by the Diagnoses History Tab)
-        diagnosis_query = """
-              WITH Distinct_Member_Diagnosis AS (
-                 SELECT DISTINCT
-                     DIAGNOSIS,
-                     Normalized_DIAGNOSIS,
-                     DIAGNOSIS_TYPE,
-                     SHORT_DESCRIPTION,
-                     LONG_DESCRIPTION,
-                     CAST(Year_month AS VARCHAR(10)) AS Year_month
-                 FROM dbo.Hospital_Readmission
-                 WHERE CAST(Member_Number AS VARCHAR(50)) = ?
-             )
-             SELECT
-                 DIAGNOSIS,
-                 Normalized_DIAGNOSIS,
-                 MAX(DIAGNOSIS_TYPE) AS DIAGNOSIS_TYPE,
-                 MAX(SHORT_DESCRIPTION) AS SHORT_DESCRIPTION,
-                 MAX(LONG_DESCRIPTION) AS LONG_DESCRIPTION,
-                 COUNT(Year_month) AS Total_Visits,
-                 MAX(Year_month) AS Last_Visit,
-                 STRING_AGG(Year_month, ' | ') WITHIN GROUP (ORDER BY Year_month DESC) AS Visit_History
-             FROM Distinct_Member_Diagnosis
-             GROUP BY 
-                 DIAGNOSIS, 
-                 Normalized_DIAGNOSIS
-             ORDER BY 
-                 Last_Visit DESC
-        """
+        # 2. Grouped Unique Diagnoses (For Diagnoses History Tab)
+        diagnoses = []
+        try:
+            diagnosis_query = """
+                WITH Distinct_Member_Diagnosis AS (
+                    SELECT DISTINCT
+                        DIAGNOSIS,
+                        Normalized_DIAGNOSIS,
+                        DIAGNOSIS_TYPE,
+                        SHORT_DESCRIPTION,
+                        LONG_DESCRIPTION,
+                        CAST(Year_month AS VARCHAR(10)) AS Year_month
+                    FROM dbo.Hospital_Readmission
+                    WHERE CAST(Member_Number AS VARCHAR(50)) = ?
+                )
+                SELECT
+                    DIAGNOSIS,
+                    Normalized_DIAGNOSIS,
+                    MAX(DIAGNOSIS_TYPE) AS DIAGNOSIS_TYPE,
+                    MAX(SHORT_DESCRIPTION) AS SHORT_DESCRIPTION,
+                    MAX(LONG_DESCRIPTION) AS LONG_DESCRIPTION,
+                    COUNT(Year_month) AS Total_Visits,
+                    MAX(Year_month) AS Last_Visit,
+                    STRING_AGG(Year_month, ' | ') WITHIN GROUP (ORDER BY Year_month DESC) AS Visit_History
+                FROM Distinct_Member_Diagnosis
+                GROUP BY 
+                    DIAGNOSIS, 
+                    Normalized_DIAGNOSIS
+                ORDER BY 
+                    Last_Visit DESC
+            """
+            cursor.execute(diagnosis_query, str(member_number).strip())
+            diagnosis_columns = [col[0] for col in cursor.description]
+            diagnoses = [dict(zip(diagnosis_columns, d_row)) for d_row in cursor.fetchall()]
+        except Exception as diag_err:
+            print("Diagnoses query error:", str(diag_err))
+            diagnoses = []
 
-        cursor.execute(diagnosis_query, str(member_number).strip())
-        diagnosis_columns = [col[0] for col in cursor.description]
-        diagnoses = [dict(zip(diagnosis_columns, d_row)) for d_row in cursor.fetchall()]
         patient["Diagnoses"] = diagnoses
 
-        # 3. Raw Individual Chronological Encounters (Returns all 20 encounters without GROUP BY)
-        medical_history_query = """
-            SELECT
-                DIAGNOSIS,
-                Normalized_DIAGNOSIS,
-                DIAGNOSIS_TYPE,
-                SHORT_DESCRIPTION,
-                LONG_DESCRIPTION,
-                CAST(Year_month AS VARCHAR(10)) AS Year_month
-            FROM dbo.Hospital_Readmission
-            WHERE CAST(Member_Number AS VARCHAR(50)) = ?
-              AND Year_month IS NOT NULL
-            ORDER BY 
-                CAST(Year_month AS VARCHAR(10)) DESC
-        """
+        # 3. Clinical Timeline / Procedures from dbo.Medical_Claims
+        medical_history = []
+        try:
+            member_param = str(member_number).strip()
+            medical_history_query = """
+                SELECT 
+                    SERVICE_DATE,
+                    PLACE_OF_SERVICE,
+                    SERVICE_PROVIDER_LAST_NAME,
+                    SERVICE_PROVIDER_FIRST_NAME,
+                    PROCEDURE_CODE_2,
+                    SERVICE_SUB_CATEGORY,
+                    PAID_PROVIDER_LAST_NAME
+                FROM (
+                    SELECT DISTINCT
+                        [SERVICE DATE] AS RAW_DATE,
+                        COALESCE(CONVERT(VARCHAR(10), [SERVICE DATE], 120), CAST([SERVICE DATE] AS VARCHAR(20))) AS SERVICE_DATE,
+                        COALESCE([PLACE OF SERVICE], 'N/A') AS PLACE_OF_SERVICE,
+                        COALESCE([SERVICE PROVIDER LAST NAME], '') AS SERVICE_PROVIDER_LAST_NAME,
+                        COALESCE([SERVICE PROVIDER FIRST NAME], '') AS SERVICE_PROVIDER_FIRST_NAME,
+                        COALESCE([PROCEDURE CODE 2], '') AS PROCEDURE_CODE_2,
+                        COALESCE([SERVICE SUB-CATEGORY], 'Medical Claim Encounter') AS SERVICE_SUB_CATEGORY,
+                        COALESCE([PAID PROVIDER LAST NAME], '') AS PAID_PROVIDER_LAST_NAME
+                    FROM [dbo].[Medical_Claims]
+                    WHERE CAST([MEMBER NUMBER] AS VARCHAR(50)) = ?
+                ) AS ClaimsSubquery
+                ORDER BY RAW_DATE DESC
+            """
+            cursor.execute(medical_history_query, member_param)
+            history_columns = [col[0] for col in cursor.description]
+            medical_history = [dict(zip(history_columns, h_row)) for h_row in cursor.fetchall()]
+        except Exception as hist_err:
+            print("Clinical timeline query error:", str(hist_err))
+            medical_history = []
 
-        cursor.execute(medical_history_query, str(member_number).strip())
-        history_columns = [col[0] for col in cursor.description]
-        medical_history = [dict(zip(history_columns, h_row)) for h_row in cursor.fetchall()]
         patient["Medical_History"] = medical_history
+
+        # 4. Medication Claims from dbo.Fact_pharmacyClaims (Excluding Refills & Pkg Size, including Drug Code & Dosage Strength)
+        medications = []
+        try:
+            medication_query = """
+                SELECT
+                    CAST([NATIONAL DRUG CODE] AS VARCHAR(50)) AS DRUG_CODE,
+                    [DRUG NAME] AS DRUG_NAME,
+                    CASE 
+                        -- Case 1: Standard layout: Strength has number, Metric Units has text
+                        WHEN ISNUMERIC(LTRIM(RTRIM(CAST([DRUG STRENGHT] AS VARCHAR(50))))) = 1 
+                             AND NULLIF(LTRIM(RTRIM(CAST([METRICS UNITS] AS VARCHAR(50)))), '') NOT IN ('N/A', 'NULL')
+                        THEN LTRIM(RTRIM(CAST([DRUG STRENGHT] AS VARCHAR(50)))) + ' ' + LTRIM(RTRIM(CAST([METRICS UNITS] AS VARCHAR(50))))
+
+                        -- Case 2: Inverted columns: Metric Units has number, Drug Strength has text
+                        WHEN ISNUMERIC(LTRIM(RTRIM(CAST([METRICS UNITS] AS VARCHAR(50))))) = 1 
+                             AND NULLIF(LTRIM(RTRIM(CAST([DRUG STRENGHT] AS VARCHAR(50)))), '') NOT IN ('N/A', 'NULL')
+                        THEN LTRIM(RTRIM(CAST([METRICS UNITS] AS VARCHAR(50)))) + ' ' + LTRIM(RTRIM(CAST([DRUG STRENGHT] AS VARCHAR(50))))
+
+                        -- Case 3: Only Strength is available
+                        WHEN NULLIF(LTRIM(RTRIM(CAST([DRUG STRENGHT] AS VARCHAR(50)))), '') NOT IN ('N/A', 'NULL')
+                             AND LTRIM(RTRIM(CAST([DRUG STRENGHT] AS VARCHAR(50)))) <> ''
+                        THEN LTRIM(RTRIM(CAST([DRUG STRENGHT] AS VARCHAR(50))))
+
+                        -- Case 4: Strength is NULL/N/A, so fallback to Metric Unit
+                        WHEN NULLIF(LTRIM(RTRIM(CAST([METRICS UNITS] AS VARCHAR(50)))), '') NOT IN ('N/A', 'NULL')
+                             AND LTRIM(RTRIM(CAST([METRICS UNITS] AS VARCHAR(50)))) <> ''
+                        THEN LTRIM(RTRIM(CAST([METRICS UNITS] AS VARCHAR(50))))
+
+                        -- Case 5: Both empty/null
+                        ELSE ''
+                    END AS DOSAGE_STRENGTH,
+                    [PRESCRIPTION NUMBER] AS PRESCRIPTION_NUMBER,
+                    COALESCE(CONVERT(VARCHAR(10), [PRESCRIPTION FILL DATE], 120), CAST([PRESCRIPTION FILL DATE] AS VARCHAR(20))) AS PRESCRIPTION_FILL_DATE,
+                    [DAYS SUPPLY] AS DAYS_SUPPLY,
+                    [PRESC PHYSICIAN LAST NAME] AS PRESC_PHYSICIAN_LAST_NAME,
+                    [PRESC PHYSICIAN FIRST NAME] AS PRESC_PHYSICIAN_FIRST_NAME
+                FROM dbo.Fact_pharmacyClaims
+                WHERE CAST([PATIENT NUMBER] AS VARCHAR(50)) = ?
+                ORDER BY 
+                    [PRESCRIPTION FILL DATE] DESC
+            """
+            cursor.execute(medication_query, str(member_number).strip())
+            med_columns = [col[0] for col in cursor.description]
+            medications = [dict(zip(med_columns, m_row)) for m_row in cursor.fetchall()]
+        except Exception as med_err:
+            print("Medication claims query error:", str(med_err))
+            medications = []
+
+        patient["Medications"] = medications
 
         return {
             "success": True,

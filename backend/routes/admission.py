@@ -194,7 +194,6 @@ def get_patient_list(
             where_clause += " AND HA.Actual_Admission_Status = ?"
             params.append(status)
 
-        # Joins with dbo.Member_ICDcodes via OUTER APPLY to fetch patient name cleanly
         unique_patients_cte = f"""
             WITH UniquePatients AS (
                 SELECT
@@ -432,33 +431,98 @@ def get_patient_profile(member_number: str):
 
         patient["Diagnoses"] = diagnoses
 
-        # 3. Clinical Timeline / Medical History (All raw encounters without GROUP BY)
+        # 3. Clinical Timeline from dbo.Medical_Claims
         medical_history = []
         try:
+            member_param = str(member_number).strip()
             medical_history_query = """
-                SELECT
-                    DIAGNOSIS,
-                    Normalized_DIAGNOSIS,
-                    DIAGNOSIS_TYPE,
-                    SHORT_DESCRIPTION,
-                    LONG_DESCRIPTION,
-                    CAST(Year_month AS VARCHAR(10)) AS Year_month
-                FROM dbo.Hospital_Admission
-                WHERE CAST(Member_Number AS VARCHAR(50)) = ?
-                  AND Year_month IS NOT NULL
-                ORDER BY 
-                    CAST(Year_month AS VARCHAR(10)) DESC
+                SELECT 
+                    SERVICE_DATE,
+                    PLACE_OF_SERVICE,
+                    SERVICE_PROVIDER_LAST_NAME,
+                    SERVICE_PROVIDER_FIRST_NAME,
+                    PROCEDURE_CODE_2,
+                    SERVICE_SUB_CATEGORY,
+                    PAID_PROVIDER_LAST_NAME
+                FROM (
+                    SELECT DISTINCT
+                        [SERVICE DATE] AS RAW_DATE,
+                        COALESCE(CONVERT(VARCHAR(10), [SERVICE DATE], 120), CAST([SERVICE DATE] AS VARCHAR(20))) AS SERVICE_DATE,
+                        COALESCE([PLACE OF SERVICE], 'N/A') AS PLACE_OF_SERVICE,
+                        COALESCE([SERVICE PROVIDER LAST NAME], '') AS SERVICE_PROVIDER_LAST_NAME,
+                        COALESCE([SERVICE PROVIDER FIRST NAME], '') AS SERVICE_PROVIDER_FIRST_NAME,
+                        COALESCE([PROCEDURE CODE 2], '') AS PROCEDURE_CODE_2,
+                        COALESCE([SERVICE SUB-CATEGORY], 'Medical Claim Encounter') AS SERVICE_SUB_CATEGORY,
+                        COALESCE([PAID PROVIDER LAST NAME], '') AS PAID_PROVIDER_LAST_NAME
+                    FROM [dbo].[Medical_Claims]
+                    WHERE CAST([MEMBER NUMBER] AS VARCHAR(50)) = ?
+                ) AS ClaimsSubquery
+                ORDER BY RAW_DATE DESC
             """
-            cursor.execute(medical_history_query, str(member_number).strip())
-            history_columns = [column[0] for column in cursor.description]
+            cursor.execute(medical_history_query, member_param)
+            history_columns = [col[0] for col in cursor.description]
             medical_history = [
                 dict(zip(history_columns, h_row))
                 for h_row in cursor.fetchall()
             ]
-        except Exception:
+        except Exception as hist_err:
+            print("Admission clinical timeline query error:", str(hist_err))
             medical_history = []
 
         patient["Medical_History"] = medical_history
+
+        # 4. Medication Claims from Fact_pharmacyClaims (Excluding Refills & Pkg Size, including Drug Code & Dosage Strength)
+        medications = []
+        try:
+            medication_query = """
+                SELECT
+                    CAST([NATIONAL DRUG CODE] AS VARCHAR(50)) AS DRUG_CODE,
+                    [DRUG NAME] AS DRUG_NAME,
+                    CASE 
+                        -- Case 1: Standard layout: Strength has number, Metric Units has text
+                        WHEN ISNUMERIC(LTRIM(RTRIM(CAST([DRUG STRENGHT] AS VARCHAR(50))))) = 1 
+                             AND NULLIF(LTRIM(RTRIM(CAST([METRICS UNITS] AS VARCHAR(50)))), '') NOT IN ('N/A', 'NULL')
+                        THEN LTRIM(RTRIM(CAST([DRUG STRENGHT] AS VARCHAR(50)))) + ' ' + LTRIM(RTRIM(CAST([METRICS UNITS] AS VARCHAR(50))))
+
+                        -- Case 2: Inverted columns: Metric Units has number, Drug Strength has text
+                        WHEN ISNUMERIC(LTRIM(RTRIM(CAST([METRICS UNITS] AS VARCHAR(50))))) = 1 
+                             AND NULLIF(LTRIM(RTRIM(CAST([DRUG STRENGHT] AS VARCHAR(50)))), '') NOT IN ('N/A', 'NULL')
+                        THEN LTRIM(RTRIM(CAST([METRICS UNITS] AS VARCHAR(50)))) + ' ' + LTRIM(RTRIM(CAST([DRUG STRENGHT] AS VARCHAR(50))))
+
+                        -- Case 3: Only Strength is available
+                        WHEN NULLIF(LTRIM(RTRIM(CAST([DRUG STRENGHT] AS VARCHAR(50)))), '') NOT IN ('N/A', 'NULL')
+                             AND LTRIM(RTRIM(CAST([DRUG STRENGHT] AS VARCHAR(50)))) <> ''
+                        THEN LTRIM(RTRIM(CAST([DRUG STRENGHT] AS VARCHAR(50))))
+
+                        -- Case 4: Strength is NULL/N/A, so fallback to Metric Unit
+                        WHEN NULLIF(LTRIM(RTRIM(CAST([METRICS UNITS] AS VARCHAR(50)))), '') NOT IN ('N/A', 'NULL')
+                             AND LTRIM(RTRIM(CAST([METRICS UNITS] AS VARCHAR(50)))) <> ''
+                        THEN LTRIM(RTRIM(CAST([METRICS UNITS] AS VARCHAR(50))))
+
+                        -- Case 5: Both empty/null
+                        ELSE ''
+                    END AS DOSAGE_STRENGTH,
+                    [PRESCRIPTION NUMBER] AS PRESCRIPTION_NUMBER,
+                    COALESCE(CONVERT(VARCHAR(10), [PRESCRIPTION FILL DATE], 120), CAST([PRESCRIPTION FILL DATE] AS VARCHAR(20))) AS PRESCRIPTION_FILL_DATE,
+                    [DAYS SUPPLY] AS DAYS_SUPPLY,
+                    [PRESC PHYSICIAN LAST NAME] AS PRESC_PHYSICIAN_LAST_NAME,
+                    [PRESC PHYSICIAN FIRST NAME] AS PRESC_PHYSICIAN_FIRST_NAME
+                FROM dbo.Fact_pharmacyClaims
+                WHERE CAST([PATIENT NUMBER] AS VARCHAR(50)) = ?
+                ORDER BY 
+                    [PRESCRIPTION FILL DATE] DESC
+            """
+            cursor.execute(medication_query, (str(member_number).strip(),))
+            med_columns = [column[0] for column in cursor.description]
+            medications = [
+                dict(zip(med_columns, m_row))
+                for m_row in cursor.fetchall()
+            ]
+        except Exception as med_err:
+            print("Medication claims query error:", str(med_err))
+            medications = []
+
+        patient["Medications"] = medications
 
         return {
             "success": True,
