@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata = {
-  title: "Hospital Admission Diagnostics",
+  title: "HealthAnalytics",
   description: "Healthcare ML Analytics Dashboard",
 };
 
@@ -26,8 +26,6 @@ export default function RootLayout({ children }) {
     >
       <body className="min-h-full flex flex-col bg-slate-50 text-slate-900">
         <Navbar />
-        
-        {/* Main Content Layout with Left Sidebar */}
         <div className="flex flex-1 items-start">
           <Sidebar />
           <main className="flex-1 min-w-0">{children}</main>

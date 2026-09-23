@@ -23,7 +23,7 @@ export default function Navbar() {
               height={90}
               className="object-contain"
               priority
-              onError={(e) => e.currentTarget.style.display = 'none'}
+              onError={(e) => (e.currentTarget.style.display = 'none')}
             />
           </div>
 
@@ -82,9 +82,9 @@ export default function Navbar() {
             )}
           </Link>
 
-          {/* ICD Codes Link - (Fixed Case-sensitivity) */}
+          {/* HCC Version Analytics Link - Points directly to /ICDcodes/Dashboard */}
           <Link 
-            href="/ICDcodes" 
+            href="/ICDcodes/Dashboard" 
             className={`group/link relative flex items-center gap-2 px-3 py-2 text-base font-semibold transition-colors ${
               currentPath.startsWith('/icdcodes') 
                 ? 'text-sky-600' 

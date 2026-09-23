@@ -215,10 +215,10 @@ def get_patient_list(
                 FROM dbo.Hospital_Admission HA
                 OUTER APPLY (
                     SELECT TOP 1 
-                        LTRIM(RTRIM(COALESCE(MEMBER_FIRST_NAME, '') + ' ' + COALESCE(MEMBER_LAST_NAME, ''))) AS Member_Name
-                    FROM dbo.Member_ICDcodes ICD
-                    WHERE CAST(ICD.MEMBER_NUMBER AS VARCHAR(50)) = CAST(HA.Member_Number AS VARCHAR(50))
-                      AND (ICD.MEMBER_FIRST_NAME IS NOT NULL OR ICD.MEMBER_LAST_NAME IS NOT NULL)
+                        LTRIM(RTRIM(COALESCE([MEMBER FIRST NAME], '') + ' ' + COALESCE([MEMBER LAST NAME], ''))) AS Member_Name
+                    FROM dbo.Medical_Claims ICD
+                    WHERE CAST(ICD.[MEMBER NUMBER] AS VARCHAR(50)) = CAST(HA.Member_Number AS VARCHAR(50))
+                      AND (ICD.[MEMBER FIRST NAME] IS NOT NULL OR ICD.[MEMBER LAST NAME] IS NOT NULL)
                 ) NAME_LOOKUP
                 {where_clause}
             )

@@ -280,3 +280,198 @@ def export_icd_registry(
     finally:
         if cursor: cursor.close()
         if conn: conn.close()
+# ==========================================
+# 5. HCC DASHBOARD FILTER DROPDOWNS
+# ==========================================
+@router.get("/dashboard-filters")
+def get_hcc_dashboard_filters():
+    conn = None
+    cursor = None
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        # Distinct PCPs
+        cursor.execute("""
+            SELECT DISTINCT 
+                CAST(PCP_NUMBER AS VARCHAR(50)) AS pcp_id,
+                LTRIM(RTRIM(COALESCE(PCP_FIRST_NAME, '') + ' ' + COALESCE(PCP_LAST_NAME, ''))) AS pcp_name
+            FROM dbo.Member_ICDcodes
+            WHERE PCP_NUMBER IS NOT NULL 
+              AND LTRIM(RTRIM(COALESCE(PCP_FIRST_NAME, '') + ' ' + COALESCE(PCP_LAST_NAME, ''))) <> ''
+            ORDER BY pcp_name ASC
+        """)
+        pcps = [{"id": row[0], "name": row[1]} for row in cursor.fetchall()]
+
+        # Distinct ICD Conditions
+        cursor.execute("""
+            SELECT DISTINCT 
+                DIAGNOSIS,
+                COALESCE(LONG_DESCRIPTION, 'No description') AS description
+            FROM dbo.Member_ICDcodes
+            WHERE DIAGNOSIS IS NOT NULL AND LTRIM(RTRIM(DIAGNOSIS)) <> ''
+            ORDER BY DIAGNOSIS ASC
+        """)
+        conditions = [{"diagnosis": row[0], "description": row[1]} for row in cursor.fetchall()]
+
+        # Distinct V24 HCC Codes with Description
+        cursor.execute("""
+            SELECT DISTINCT 
+                CAST(V24_Code AS VARCHAR(50)) AS v24_code,
+                COALESCE(LONG_DESCRIPTION, 'N/A') AS description
+            FROM dbo.Member_ICDcodes
+            WHERE V24_Code IS NOT NULL 
+              AND LTRIM(RTRIM(CAST(V24_Code AS VARCHAR(50)))) NOT IN ('', 'NULL', 'N/A')
+            ORDER BY v24_code ASC
+        """)
+        hcc_codes = [{"code": row[0], "description": row[1]} for row in cursor.fetchall()]
+
+        return {
+            "success": True,
+            "pcps": pcps,
+            "conditions": conditions,
+            "hcc_codes": hcc_codes
+        }
+    except Exception as e:
+        print("Filter dropdown error:", str(e))
+        raise HTTPException(status_code=500, detail="Failed to fetch dashboard filters")
+    finally:
+        if cursor: cursor.close()
+        if conn: conn.close()
+
+
+# ==========================================
+# 6. HCC DASHBOARD KPIS & STATS
+# ==========================================
+@router.get("/dashboard-stats")
+def get_hcc_dashboard_stats(
+    pcp: str = Query("ALL", description="Filter by PCP Number"),
+    condition: str = Query("ALL", description="Filter by Diagnosis Code"),
+    hcc: str = Query("ALL", description="Filter by V24 HCC Code")
+):
+    conn = None
+    cursor = None
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        where_clauses = ["DIAGNOSIS IS NOT NULL"]
+        params = []
+
+        if pcp != "ALL":
+            where_clauses.append("CAST(PCP_NUMBER AS VARCHAR(50)) = ?")
+            params.append(pcp.strip())
+
+        if condition != "ALL":
+            where_clauses.append("DIAGNOSIS = ?")
+            params.append(condition.strip())
+
+        if hcc != "ALL":
+            where_clauses.append("CAST(V24_Code AS VARCHAR(50)) = ?")
+            params.append(hcc.strip())
+
+        where_sql = " AND ".join(where_clauses)
+
+        stats_query = f"""
+            SELECT
+                -- 1. Total # of ICD 10 codes across all members and time
+                COUNT(DIAGNOSIS) AS total_icd_codes,
+
+                -- Unique count of distinct ICD 10 codes
+                COUNT(DISTINCT DIAGNOSIS) AS unique_icd_codes,
+
+                -- Total members impacted
+                COUNT(DISTINCT MEMBER_NUMBER) AS total_unique_members,
+
+                -- 2. Unsupported in v28 (Coded under v24 but not supported in v28)
+                SUM(
+                    CASE 
+                        WHEN (V24_Code IS NOT NULL AND LTRIM(RTRIM(CAST(V24_Code AS VARCHAR(50)))) NOT IN ('', 'NULL', 'N/A'))
+                             AND (
+                                 Is_ICD_Supported_in_v28 = 'No' 
+                                 OR V28_Code IS NULL 
+                                 OR LTRIM(RTRIM(CAST(V28_Code AS VARCHAR(50)))) IN ('', 'NULL', 'N/A')
+                             )
+                        THEN 1 
+                        ELSE 0 
+                    END
+                ) AS unsupported_v28_codes,
+
+                -- Total v24 mapped codes
+                SUM(
+                    CASE 
+                        WHEN V24_Code IS NOT NULL AND LTRIM(RTRIM(CAST(V24_Code AS VARCHAR(50)))) NOT IN ('', 'NULL', 'N/A')
+                        THEN 1 
+                        ELSE 0 
+                    END
+                ) AS total_v24_supported_codes
+            FROM dbo.Member_ICDcodes
+            WHERE {where_sql}
+        """
+
+        cursor.execute(stats_query, params)
+        row = cursor.fetchone()
+
+        total_icd = int(row[0] or 0)
+        unique_icd = int(row[1] or 0)
+        unique_members = int(row[2] or 0)
+        unsupported_v28 = int(row[3] or 0)
+        total_v24 = int(row[4] or 0)
+
+        # 3. %age of codes not supported in v28
+        if total_icd > 0:
+            unsupported_percentage = round((unsupported_v28 / total_icd) * 100, 2)
+        else:
+            unsupported_percentage = 0.0
+
+        # Most impacted v24 HCCs
+        breakdown_query = f"""
+            SELECT TOP 10
+                COALESCE(CAST(V24_Code AS VARCHAR(50)), 'Unmapped') AS hcc_code,
+                COALESCE(MAX(LONG_DESCRIPTION), 'N/A') AS hcc_desc,
+                COUNT(*) AS total_occurrences,
+                SUM(
+                    CASE 
+                        WHEN Is_ICD_Supported_in_v28 = 'No' 
+                             OR V28_Code IS NULL 
+                             OR LTRIM(RTRIM(CAST(V28_Code AS VARCHAR(50)))) IN ('', 'NULL', 'N/A')
+                        THEN 1 
+                        ELSE 0 
+                    END
+                ) AS unsupported_in_v28
+            FROM dbo.Member_ICDcodes
+            WHERE {where_sql}
+              AND V24_Code IS NOT NULL 
+              AND LTRIM(RTRIM(CAST(V24_Code AS VARCHAR(50)))) NOT IN ('', 'NULL', 'N/A')
+            GROUP BY V24_Code
+            ORDER BY unsupported_in_v28 DESC, total_occurrences DESC
+        """
+        cursor.execute(breakdown_query, params)
+        hcc_breakdown = [
+            {
+                "hcc_code": b[0],
+                "description": b[1],
+                "total_claims": int(b[2] or 0),
+                "unsupported_v28": int(b[3] or 0)
+            }
+            for b in cursor.fetchall()
+        ]
+
+        return {
+            "success": True,
+            "kpis": {
+                "total_icd_codes": total_icd,
+                "unique_icd_codes": unique_icd,
+                "total_unique_members": unique_members,
+                "unsupported_v28_codes": unsupported_v28,
+                "total_v24_supported_codes": total_v24,
+                "unsupported_percentage": unsupported_percentage
+            },
+            "impacted_hccs": hcc_breakdown
+        }
+    except Exception as e:
+        print("Dashboard stats error:", str(e))
+        raise HTTPException(status_code=500, detail="Failed to fetch dashboard statistics")
+    finally:
+        if cursor: cursor.close()
+        if conn: conn.close()
